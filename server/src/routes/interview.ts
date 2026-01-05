@@ -75,13 +75,16 @@ function nextPermutation(nums) {
   }
 ];
 
+// In-memory cache for sessions
+const sessionCache = new Map<string, any>();
+
 // POST /start
 router.post('/start', async (req: Request, res: Response) => {
   try {
     const question = QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
     const sessionId = uuidv4();
 
-    const session = new Session({
+    const sessionData = {
       sessionId,
       question: {
         title: question.title,
@@ -90,12 +93,14 @@ router.post('/start', async (req: Request, res: Response) => {
         starterCode: question.starterCode
       },
       status: 'active'
-    });
+    };
 
+    const session = new Session(sessionData);
     await session.save();
 
-    // Cache in Redis for quick lookup (expires in 1 hour)
-    await redis.set(`session:${sessionId}`, JSON.stringify(session), 'EX', 3600);
+    // Cache in memory (expires in 1 hour handling not strictly needed for Map but could clear on interval if needed)
+    sessionCache.set(sessionId, sessionData);
+    console.log(`[Cache] Session ${sessionId} cached.`);
 
     res.json({
       sessionId,
@@ -131,8 +136,8 @@ router.post('/submit', async (req: Request, res: Response) => {
       session.feedback = evaluation;
       await session.save();
 
-      // Clear/Update Redis cache
-      await redis.set(`session:${sessionId}`, JSON.stringify(session), 'EX', 3600);
+      // Update cache
+      sessionCache.set(sessionId, session.toObject());
 
       res.json({
         feedback: session.feedback
@@ -148,11 +153,11 @@ router.get('/session/:sessionId', async (req: Request, res: Response) => {
   const { sessionId } = req.params;
 
   try {
-    // Try Redis first
-    const cachedSession = await redis.get(`session:${sessionId}`);
+    // Try Map cache first
+    const cachedSession = sessionCache.get(sessionId);
     if (cachedSession) {
-      console.log("Serving session from Redis cache");
-      return res.json(JSON.parse(cachedSession));
+      console.log(`[Cache] Serving session ${sessionId} from memory`);
+      return res.json(cachedSession);
     }
 
     const session = await Session.findOne({ sessionId });
@@ -161,7 +166,7 @@ router.get('/session/:sessionId', async (req: Request, res: Response) => {
     }
 
     // Cache it for future lookups
-    await redis.set(`session:${sessionId}`, JSON.stringify(session), 'EX', 3600);
+    sessionCache.set(sessionId, session.toObject());
 
     res.json(session);
   } catch (error) {

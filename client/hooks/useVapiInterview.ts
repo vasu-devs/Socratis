@@ -24,6 +24,13 @@ export function useVapiInterview({ questionDescription, onCallEnd: onCallEndCall
                 return;
             }
 
+            if (!questionDescription || questionDescription === "Fetching question details...") {
+                console.warn("Attempted to start Vapi without valid question description");
+                return;
+            }
+
+            console.log("Starting Vapi session with question:", questionDescription.substring(0, 50) + "...");
+
             // We can use the override system to inject the system prompt
             const assistantOverrides = {
                 variableValues: {
@@ -69,10 +76,24 @@ export function useVapiInterview({ questionDescription, onCallEnd: onCallEndCall
         const onSpeechEnd = () => setIsSpeaking(false);
         const onMessage = (message: any) => {
             if (message.type === "transcript" && message.transcriptType === "final") {
-                setTranscript(prev => [...prev, {
-                    role: message.role === "assistant" ? "ai" : "user",
+                const newTranscriptItem = {
+                    role: message.role === "assistant" ? "ai" as const : "user" as const,
                     content: message.transcript
-                }]);
+                };
+
+                setTranscript(prev => [...prev, newTranscriptItem]);
+
+                // Check for termination phrases from user
+                if (message.role === "user") {
+                    const terminationRegex = /^(I('?m| am) done|End (the )?(interview|test|call)|That'?s all|Stop)/i;
+                    if (terminationRegex.test(message.transcript)) {
+                        console.log("Termination phrase detected. Ending session...");
+                        // Small delay to allow 'natural' feel or just stop immediately
+                        setTimeout(() => {
+                            stopSession();
+                        }, 500);
+                    }
+                }
             }
         };
 
