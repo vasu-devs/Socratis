@@ -5,9 +5,10 @@ const vapi = new Vapi(process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY || '');
 
 interface UseVapiInterviewProps {
     questionDescription: string;
+    onCallEnd?: () => void;
 }
 
-export function useVapiInterview({ questionDescription }: UseVapiInterviewProps) {
+export function useVapiInterview({ questionDescription, onCallEnd: onCallEndCallback }: UseVapiInterviewProps) {
     const [isConnected, setIsConnected] = useState(false);
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [transcript, setTranscript] = useState<Array<{ role: 'ai' | 'user', content: string }>>([]);
@@ -27,7 +28,7 @@ export function useVapiInterview({ questionDescription }: UseVapiInterviewProps)
             const assistantOverrides = {
                 variableValues: {
                     // If the assistant is configured to use this variable
-                    question_context: questionDescription
+                    question_context: `You are a technical interviewer. PLEASE START BY READING THE QUESTION ALOUD TO THE CANDIDATE. Here is the question: ${questionDescription}`
                 }
             };
 
@@ -43,7 +44,10 @@ export function useVapiInterview({ questionDescription }: UseVapiInterviewProps)
 
     useEffect(() => {
         const onCallStart = () => setIsConnected(true);
-        const onCallEnd = () => setIsConnected(false);
+        const onCallEnd = () => {
+            setIsConnected(false);
+            if (onCallEndCallback) onCallEndCallback();
+        }
         const onSpeechStart = () => setIsSpeaking(true);
         const onSpeechEnd = () => setIsSpeaking(false);
         const onMessage = (message: any) => {

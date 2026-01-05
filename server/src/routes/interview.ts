@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import Session from '../models/Session';
+import { evaluateSession } from '../services/evaluator';
 
 const router = express.Router();
 
@@ -66,15 +67,18 @@ router.post('/submit', async (req: Request, res: Response) => {
 
     session.code = code;
     session.status = 'completed';
-    // Logic to fetch transcript from Vapi would go here
-    // Logic to trigger LLM evaluation would go here
+    // Logic to fetch transcript from Vapi could go here (mocked for now)
+    const transcript: Array<{ role: 'ai' | 'user'; content: string }> = [];
+    // In a real scenario, we might have stored transcript state in DB via a webhook or separate endpoint during the call.
 
-    // Stub evaluation
-    session.feedback = {
-      correctness: true, // Placeholder
-      score: 8, // Placeholder
-      feedback_markdown: "## Evaluation\n\nGood job on the implementation! This is a stub feedback."
-    };
+    console.log("Evaluating session...");
+    const evaluation = await evaluateSession(
+      session.question,
+      code,
+      transcript
+    );
+
+    session.feedback = evaluation;
 
     await session.save();
 
@@ -84,6 +88,22 @@ router.post('/submit', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error submitting session:', error);
     res.status(500).json({ error: 'Failed to submit session' });
+  }
+});
+
+// GET /session/:sessionId
+router.get('/session/:sessionId', async (req: Request, res: Response) => {
+  const { sessionId } = req.params;
+
+  try {
+    const session = await Session.findOne({ sessionId });
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    res.json(session);
+  } catch (error) {
+    console.error('Error fetching session:', error);
+    res.status(500).json({ error: 'Failed to fetch session' });
   }
 });
 
