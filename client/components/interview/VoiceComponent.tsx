@@ -1,17 +1,19 @@
-import React from 'react';
-import { useVapiInterview } from '@/hooks/useVapiInterview';
 import { Mic, MicOff, Phone, PhoneOff } from 'lucide-react';
-
 interface VoiceComponentProps {
-    questionDescription: string;
-    onEndCall: () => void;
+    isConnected: boolean;
+    isSpeaking: boolean;
+    transcript: Array<{ role: 'ai' | 'user'; content: string }>;
+    onStart: () => void;
+    onStop: () => void;
 }
 
-export const VoiceComponent: React.FC<VoiceComponentProps> = ({ questionDescription, onEndCall }) => {
-    const { isConnected, isSpeaking, startSession, stopSession, transcript } = useVapiInterview({
-        questionDescription,
-        onCallEnd: onEndCall
-    });
+export const VoiceComponent: React.FC<VoiceComponentProps> = ({
+    isConnected,
+    isSpeaking,
+    transcript,
+    onStart,
+    onStop
+}) => {
 
     return (
         <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">
@@ -20,11 +22,9 @@ export const VoiceComponent: React.FC<VoiceComponentProps> = ({ questionDescript
                 <button
                     onClick={() => {
                         if (isConnected) {
-                            stopSession();
-                            // onEndCall is now handled by the hook's onCallEnd event or we can trigger it here explicitly
-                            // But usually Vapi's event is safer. 
+                            onStop();
                         } else {
-                            startSession();
+                            onStart();
                         }
                     }}
                     className={`px-4 py-2 rounded-full transition-all flex items-center gap-2 font-medium ${isConnected

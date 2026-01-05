@@ -71,7 +71,7 @@ ${transcript.map(t => `${t.role.toUpperCase()}: ${t.content}`).join('\n')}
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage }
       ],
-      model: 'llama3-70b-8192',
+      model: 'llama-3.3-70b-versatile',
       temperature: 0.1, // Low temperature for consistent evaluation
       response_format: { type: 'json_object' }
     });

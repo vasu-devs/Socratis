@@ -57,26 +57,24 @@ router.post('/start', async (req: Request, res: Response) => {
 
 // POST /submit
 router.post('/submit', async (req: Request, res: Response) => {
-  const { sessionId, code } = req.body;
+    const { sessionId, code, transcript = [] } = req.body;
 
-  try {
-    const session = await Session.findOne({ sessionId });
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
-    }
+    try {
+      const session = await Session.findOne({ sessionId });
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
 
-    session.code = code;
-    session.status = 'completed';
-    // Logic to fetch transcript from Vapi could go here (mocked for now)
-    const transcript: Array<{ role: 'ai' | 'user'; content: string }> = [];
-    // In a real scenario, we might have stored transcript state in DB via a webhook or separate endpoint during the call.
+      session.code = code;
+      session.transcript = transcript;
+      session.status = 'completed';
 
-    console.log("Evaluating session...");
-    const evaluation = await evaluateSession(
-      session.question,
-      code,
-      transcript
-    );
+      console.log("Evaluating session...");
+      const evaluation = await evaluateSession(
+        session.question,
+        code,
+        transcript
+      );
 
     session.feedback = evaluation;
 
