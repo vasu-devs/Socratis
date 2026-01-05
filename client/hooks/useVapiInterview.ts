@@ -41,6 +41,9 @@ export function useVapiInterview({ questionDescription, onCallEnd: onCallEndCall
                        - NEVER PROVIDE THE SOLUTION.
                        - NEVER PROVIDE CODE SNIPPETS.
                        - If they ask for the answer, say "I can't give you the answer, but let's look at [specific part of the problem] together."
+                       - **TERMINATION:** If the candidate says "End the interview", "I'm done", or "That's all", acknowledge it warmly, say goodbye, and the call will end.
+                    
+                    5. **LOOP:** Continue the interview by asking about complexity, edge cases, or potential improvements until the user signals they are finished.
                     
                     Remind them to use the code editor on the right to implement their solution.`
                 }
@@ -88,11 +91,21 @@ export function useVapiInterview({ questionDescription, onCallEnd: onCallEndCall
         };
     }, []);
 
+    const [isMuted, setIsMuted] = useState(false);
+
+    const toggleMute = useCallback(() => {
+        const newMuted = !isMuted;
+        vapi.setMuted(newMuted);
+        setIsMuted(newMuted);
+    }, [isMuted]);
+
     return {
         isConnected,
         isSpeaking,
+        isMuted,
         transcript,
         startSession,
-        stopSession
+        stopSession,
+        toggleMute
     };
 }

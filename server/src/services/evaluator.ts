@@ -31,7 +31,7 @@ export async function evaluateSession(
     groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
   }
 
-  const systemPrompt = `You are a Senior Technical Interviewer in a coding interview.
+  const systemPrompt = `You are a Senior Technical Interviewer in a coding interview at a top-tier tech company.
 Your goal is to evaluate the candidate's solution and their communication based on the provided inputs.
 
 **Data Provided:**
@@ -44,16 +44,24 @@ Your goal is to evaluate the candidate's solution and their communication based 
 - **Correctness:** Does the code solve the problem? Does it handle edge cases?
 - **Optimality:** Is the time/space complexity roughly optimal?
 - **Code Quality:** Naming, structure, readability.
+- **Communication:** How well did the candidate explain their approach?
 
-**Output:**
+**Output Requirements:**
 You must return a STRICT JSON object in the following format:
 {
   "score": number, // 1-10 integer
   "correctness": boolean,
-  "feedback_markdown": "string" // A helpful, constructive review containing code snippets if needed, formatted in Markdown.
+  "feedback_markdown": "string" // A helpful, constructive review formatted in Markdown.
 }
-  
-If the code is empty or nonsensical, mark correctness as false and score low.`;
+
+**Feedback Markdown Content:**
+The "feedback_markdown" MUST contain the following sections explicitly:
+- ### What was done well
+- ### What could be improved
+- ### Missing edge cases
+- ### Next steps for preparation
+
+If the code is empty or nonsensical, mark correctness as false and score low, but still provide the sections.`;
 
   const userMessage = `
 **Candidate Code:**

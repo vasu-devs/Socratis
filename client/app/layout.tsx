@@ -1,12 +1,18 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const instrumentSerif = Instrument_Serif({ 
+  subsets: ["latin"], 
+  weight: "400",
+  variable: "--font-serif",
+  style: "italic" 
+});
 
 export const metadata: Metadata = {
-  title: "Mock Interview Platform",
-  description: "Practice coding interviews with AI",
+  title: "Socratis | AI Interview Practice",
+  description: "Elite coding interview practice powered by AI.",
 };
 
 export default function RootLayout({
@@ -15,8 +21,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={inter.className}>{children}</body>
+    <html lang="en" className={`${inter.variable} ${instrumentSerif.variable}`}>
+      <body className="antialiased selection:bg-blue-100 selection:text-blue-900 font-sans">
+        {children}
+      </body>
     </html>
   );
 }
