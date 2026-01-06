@@ -10,6 +10,21 @@ import redis from '../lib/redis';
 // Hardcoded questions for variety
 const QUESTIONS = [
   {
+    title: "Two Sum",
+    description: "Given an array of integers `nums` and an integer `target`, return indices of the two numbers such that they add up to `target`. You may assume that each input would have exactly one solution, and you may not use the same element twice.",
+    examples: [
+      "Input: nums = [2,7,11,15], target = 9\nOutput: [0,1]\nExplanation: Because nums[0] + nums[1] == 9, we return [0, 1]."
+    ],
+    starterCode: `/**
+ * @param {number[]} nums
+ * @param {number} target
+ * @return {number[]}
+ */
+function twoSum(nums, target) {
+  // Your code here
+}`
+  },
+  {
     title: "Request Throttler",
     description: "Implement a rate limiter (throttler) that restricts a function to be called at most once every `limit` milliseconds. The returned function should accept arguments and return the result of the original function if executed, or undefined if throttled.",
     examples: [
@@ -81,7 +96,8 @@ const sessionCache = new Map<string, any>();
 // POST /start
 router.post('/start', async (req: Request, res: Response) => {
   try {
-    const question = QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
+    // FORCE "Two Sum" (Index 0) as per user request to remove randomness
+    const question = QUESTIONS[0]; 
     const sessionId = uuidv4();
 
     const sessionData = {

@@ -13,6 +13,13 @@ export function useVapiInterview({ questionDescription, onCallEnd: onCallEndCall
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [transcript, setTranscript] = useState<Array<{ role: 'ai' | 'user', content: string }>>([]);
 
+    // Use a ref to keep track of the latest callback to avoid stale closures in the event listener
+    const onCallEndCallbackRef = useRef(onCallEndCallback);
+
+    useEffect(() => {
+        onCallEndCallbackRef.current = onCallEndCallback;
+    }, [onCallEndCallback]);
+
     // Initialize Vapi with the specific assistant and inject context
     const startSession = useCallback(async () => {
         try {
@@ -70,7 +77,7 @@ export function useVapiInterview({ questionDescription, onCallEnd: onCallEndCall
         const onCallStart = () => setIsConnected(true);
         const onCallEnd = () => {
             setIsConnected(false);
-            if (onCallEndCallback) onCallEndCallback();
+            if (onCallEndCallbackRef.current) onCallEndCallbackRef.current();
         }
         const onSpeechStart = () => setIsSpeaking(true);
         const onSpeechEnd = () => setIsSpeaking(false);
@@ -91,6 +98,11 @@ export function useVapiInterview({ questionDescription, onCallEnd: onCallEndCall
                         // Small delay to allow 'natural' feel or just stop immediately
                         setTimeout(() => {
                             stopSession();
+                            // Backup: Manually trigger end callback to ensure submission happens even if Vapi event doesn't fire
+                            if (onCallEndCallbackRef.current) {
+                                console.log("Manually triggering end callback via voice command");
+                                onCallEndCallbackRef.current();
+                            }
                         }, 500);
                     }
                 }
