@@ -33,6 +33,8 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
     const [question, setQuestion] = useState(INITIAL_QUESTION);
     const [loading, setLoading] = useState(true);
     const [currentSessionId, setCurrentSessionId] = useState<string>(initialSessionId);
+    const [hasStarted, setHasStarted] = useState(false);
+    const [isConnecting, setIsConnecting] = useState(false);
 
     useEffect(() => {
         const fetchSession = async () => {
@@ -108,11 +110,20 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
         onCallEnd: handleEndCall
     });
 
-    useEffect(() => {
-        if (!loading && question.title !== "Loading..." && !isConnected) {
-            startSession().catch(err => console.log("Auto-start blocked", err));
+    // Removed auto-start useEffect to fix Brave autoplay issues
+    // Manually triggered by user in overlay instead
+
+    const handleStartInterview = async () => {
+        setHasStarted(true);
+        setIsConnecting(true);
+        try {
+            await startSession();
+        } catch (err) {
+            console.error("Failed to start session:", err);
+        } finally {
+            setIsConnecting(false);
         }
-    }, [loading, question.title, startSession]);
+    };
 
     const handleCodeChange = (value: string | undefined) => {
         if (value !== undefined) setCode(value);
@@ -129,7 +140,38 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
     );
 
     return (
-        <div className="h-screen flex flex-col bg-white overflow-hidden">
+        <div className="h-screen flex flex-col bg-white overflow-hidden relative">
+            {/* Start Interview Overlay */}
+            {!hasStarted && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm">
+                    <div className="bg-white p-8 rounded-2xl shadow-2xl border border-slate-100 max-w-md w-full text-center">
+                        <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <Sparkles className="text-blue-500" size={32} />
+                        </div>
+                        <h2 className="text-2xl font-bold text-slate-900 mb-2">Ready to Interview?</h2>
+                        <p className="text-slate-500 mb-8">
+                            This session uses AI voice interaction. Click below to enable your microphone and begin.
+                        </p>
+                        <button
+                            onClick={handleStartInterview}
+                            className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-blue-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                        >
+                            Start Interview
+                        </button>
+                    </div>
+                </div>
+            )}
+            
+            {/* Connecting Overlay */ }
+            {isConnecting && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/60 backdrop-blur-sm">
+                   <div className="flex flex-col items-center">
+                        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
+                        <p className="font-semibold text-slate-700">Connecting to Socratis...</p>
+                   </div>
+                </div>
+            )}
+
             {/* Minimal Header */}
             <header className="h-14 border-b border-slate-100 flex items-center justify-between px-6 shrink-0 z-20 bg-white">
                 <div className="flex items-center gap-4">
