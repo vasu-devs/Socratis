@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import Session from '../models/Session';
 import { evaluateSession } from '../services/evaluator';
+import { AccessToken } from 'livekit-server-sdk';
 
 const router = express.Router();
 
@@ -92,6 +93,46 @@ function nextPermutation(nums) {
 
 // In-memory cache for sessions
 const sessionCache = new Map<string, any>();
+
+// POST /livekit/token
+router.post('/livekit/token', async (req: Request, res: Response) => {
+  const { sessionId, participantName } = req.body;
+
+  if (!sessionId || !participantName) {
+    return res.status(400).json({ error: 'sessionId and participantName are required' });
+  }
+
+  try {
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
+    const wsUrl = process.env.LIVEKIT_URL;
+
+    if (!apiKey || !apiSecret || !wsUrl) {
+      return res.status(500).json({ error: 'LiveKit configuration is missing' });
+    }
+
+    const at = new AccessToken(apiKey, apiSecret, {
+      identity: participantName,
+    });
+
+    at.addGrant({
+      roomJoin: true,
+      room: sessionId,
+      canPublish: true,
+      canSubscribe: true,
+    });
+
+    const token = await at.toJwt();
+
+    res.json({
+      token,
+      url: wsUrl,
+    });
+  } catch (error) {
+    console.error('Error generating LiveKit token:', error);
+    res.status(500).json({ error: 'Failed to generate token' });
+  }
+});
 
 // POST /start
 router.post('/start', async (req: Request, res: Response) => {

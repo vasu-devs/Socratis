@@ -30,45 +30,110 @@ The project is a **Local-First Monorepo** using Next.js for the frontend and Exp
 *   **Framework**: Next.js 14 (App Router).
 *   **Styling**: Tailwind CSS + ShadCN UI.
 *   **Components**: Monaco Editor, Unified Layout Sidebar.
-*   **Voice**: Vapi.ai SDK integration for low-latency voice interaction.
+*   **Voice**: LiveKit Client SDK for real-time voice interaction with AI agent.
+
+### AI Agent (`server/agent/`)
+*   **Framework**: LiveKit Agents (Python)
+*   **LLM**: Groq (Llama 3.3 70B Speculative Decoding)
+*   **Speech-to-Text**: Deepgram
+*   **Text-to-Speech**: Deepgram
+*   **VAD**: Silero Voice Activity Detection
 
 ---
 
 ## 🚀 Running the Project
 
-1.  **Start Databases**: 
-    *   Ensure **MongoDB** is running (`localhost:27017`).
-    *   Ensure **Redis** is running (`localhost:6379`).
-2.  **Start Backend**: 
-    ```bash
-    cd server
-    npm install
-    npm run dev
-    ```
-    (Runs on port 4000)
-3.  **Start Frontend**:
-    ```bash
-    cd client
-    npm install
-    npm run dev
-    ```
-    (Runs on port 3000)
+### Prerequisites
+1. **Python 3.8+** installed and available in PATH
+2. **MongoDB** running on `localhost:27017`
+3. **Redis** running on `localhost:6379`
+4. **API Keys** configured in `.env` file (see below)
+
+### 1. Environment Setup
+Copy `.env.example` to `.env` and fill in your API keys:
+```bash
+cp .env.example .env
+```
+
+Required API keys:
+- **LiveKit**: Get from [cloud.livekit.io](https://cloud.livekit.io/) (see `livekit.md` for detailed instructions)
+- **Groq**: Get from [console.groq.com](https://console.groq.com/)
+- **Deepgram**: Get from [console.deepgram.com](https://console.deepgram.com/)
+
+### 2. Install Dependencies
+
+**Python Agent**:
+```bash
+cd server/agent
+pip install -r requirements.txt
+```
+
+**Backend**:
+```bash
+cd server
+npm install
+```
+
+**Frontend**:
+```bash
+cd client
+npm install
+```
+
+### 3. Start Services (in order)
+
+**Terminal 1 - LiveKit Agent**:
+```bash
+# Option A: Use the startup script (Windows)
+start-agent.bat
+
+# Option B: Manual start
+cd server/agent
+python agent.py dev
+```
+
+**Terminal 2 - Backend Server**:
+```bash
+cd server
+npm run dev
+```
+(Runs on port 4000)
+
+**Terminal 3 - Frontend**:
+```bash
+cd client
+npm run dev
+```
+(Runs on port 3000)
+
+### 4. Access the Application
+Navigate to `http://localhost:3000` and start your interview!
+
+
 
 ## 🔑 Environment Variables
 
-### Root / Server `.env`
+### Root `.env`
 ```env
+# LiveKit Configuration
+LIVEKIT_API_KEY=your_livekit_api_key
+LIVEKIT_API_SECRET=your_livekit_api_secret
+LIVEKIT_URL=wss://your-project.livekit.cloud
+
+# AI Services
 GROQ_API_KEY=your_groq_key
+DEEPGRAM_API_KEY=your_deepgram_key
+
+# Database
 MONGODB_URI=mongodb://localhost:27017/socratis
 REDIS_URL=redis://localhost:6379
+
+# Server
 PORT=4000
 ```
 
-### Client `.env.local`
-```env
-NEXT_PUBLIC_VAPI_PUBLIC_KEY=your_vapi_key
-NEXT_PUBLIC_VAPI_ASSISTANT_ID=your_vapi_assistant_id
-```
+See `.env.example` for a complete template.
+
 
 ## ✨ Key Features Implemented
 - **Unified Interview Layout**: Problem description and AI interviewer sidebar are visible simultaneously.

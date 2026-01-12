@@ -19,6 +19,7 @@
     "express": "^5.2.1",
     "groq-sdk": "^0.37.0",
     "ioredis": "^5.9.0",
+    "livekit-server-sdk": "^2.15.0",
     "mongoose": "^9.1.1",
     "uuid": "^13.0.0"
   },

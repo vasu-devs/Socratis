@@ -29,3 +29,8 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Agent Logs
+agent_logs*.txt
+agents_files*.txt
+check_results.txt

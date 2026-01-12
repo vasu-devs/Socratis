@@ -6,7 +6,7 @@ import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'reac
 import { CodeEditor } from './CodeEditor';
 import { VoiceComponent } from './VoiceComponent';
 import { FileCode, Sparkles, ChevronLeft } from 'lucide-react';
-import { useVapiInterview } from '@/hooks/useVapiInterview';
+import { useLiveKitInterview } from '@/hooks/useLiveKitInterview';
 import Link from 'next/link';
 
 interface InterviewRoomProps {
@@ -105,8 +105,9 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
         if (!isSubmitting.current) submitSession(transcript);
     };
 
-    const { isConnected, isSpeaking, isMuted, startSession, stopSession, toggleMute, transcript } = useVapiInterview({
-        questionDescription: question.description,
+    const { isConnected, isSpeaking, isMuted, startSession, stopSession, toggleMute, transcript } = useLiveKitInterview({
+        sessionId: currentSessionId,
+        participantName: "Candidate",
         onCallEnd: handleEndCall
     });
 
@@ -161,14 +162,14 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
                     </div>
                 </div>
             )}
-            
-            {/* Connecting Overlay */ }
+
+            {/* Connecting Overlay */}
             {isConnecting && (
                 <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/60 backdrop-blur-sm">
-                   <div className="flex flex-col items-center">
+                    <div className="flex flex-col items-center">
                         <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
                         <p className="font-semibold text-slate-700">Connecting to Socratis...</p>
-                   </div>
+                    </div>
                 </div>
             )}
 
@@ -205,13 +206,13 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
                                     <p className="text-slate-600 leading-relaxed whitespace-pre-wrap">
                                         {question.description}
                                     </p>
-                                    
+
                                     <div className="mt-8 space-y-6">
                                         <h4 className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">Examples</h4>
                                         {question.examples.map((ex, i) => (
                                             <div key={i} className="bg-slate-50 rounded-xl p-4 font-mono text-xs border border-slate-100 relative overflow-hidden group">
-                                               <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/10 group-hover:bg-blue-500/30 transition-colors" />
-                                               {ex}
+                                                <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/10 group-hover:bg-blue-500/30 transition-colors" />
+                                                {ex}
                                             </div>
                                         ))}
                                     </div>
@@ -222,7 +223,7 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
                         <PanelResizeHandle className="h-[1px] bg-slate-100 hover:bg-blue-500 transition-colors z-20" />
 
                         <Panel defaultSize={40} minSize={20} className="bg-slate-50/50 border-r border-slate-100 relative overflow-hidden">
-                             <VoiceComponent
+                            <VoiceComponent
                                 isConnected={isConnected}
                                 isSpeaking={isSpeaking}
                                 isMuted={isMuted}

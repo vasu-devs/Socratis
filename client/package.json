@@ -9,9 +9,10 @@
         "lint": "next lint"
     },
     "dependencies": {
+        "@livekit/components-react": "^2.9.17",
         "@monaco-editor/react": "^4.7.0",
-        "@vapi-ai/web": "^2.5.2",
         "clsx": "^2.1.1",
+        "livekit-client": "^2.16.1",
         "lucide-react": "^0.562.0",
         "next": "14.2.3",
         "react": "^18",
@@ -24,6 +25,7 @@
         "@types/node": "^20",
         "@types/react": "^18",
         "@types/react-dom": "^18",
+        "autoprefixer": "^10.4.23",
         "eslint": "^8",
         "eslint-config-next": "14.2.3",
         "postcss": "^8",
