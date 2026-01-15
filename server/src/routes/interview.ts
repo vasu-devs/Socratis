@@ -78,8 +78,8 @@ function throttle(func, limit) {
     title: "Next Permutation",
     description: "Implement next permutation, which rearranges numbers into the lexicographically next greater permutation of numbers. If such an arrangement is not possible, it must rearrange it as the lowest possible order (i.e., sorted in ascending order). The replacement must be in place and use only constant extra memory.",
     examples: [
-        "Input: nums = [1,2,3]\nOutput: [1,3,2]",
-        "Input: nums = [3,2,1]\nOutput: [1,2,3]"
+      "Input: nums = [1,2,3]\nOutput: [1,3,2]",
+      "Input: nums = [3,2,1]\nOutput: [1,2,3]"
     ],
     starterCode: `/**
  * @param {number[]} nums
@@ -123,6 +123,8 @@ router.post('/livekit/token', async (req: Request, res: Response) => {
     });
 
     const token = await at.toJwt();
+    console.log(`[Token] Generated for Room: ${sessionId}, Participant: ${participantName}`);
+    console.log(`[Token] Using LiveKit URL: ${wsUrl}`);
 
     res.json({
       token,
@@ -138,8 +140,10 @@ router.post('/livekit/token', async (req: Request, res: Response) => {
 router.post('/start', async (req: Request, res: Response) => {
   try {
     // FORCE "Two Sum" (Index 0) as per user request to remove randomness
-    const question = QUESTIONS[0]; 
-    const sessionId = uuidv4();
+    const question = QUESTIONS[0];
+
+    // DEBUG MODE: Fixed Session ID to match Agent Room
+    const sessionId = "socratis-interview"; // uuidv4();
 
     const sessionData = {
       sessionId,
@@ -152,8 +156,11 @@ router.post('/start', async (req: Request, res: Response) => {
       status: 'active'
     };
 
-    const session = new Session(sessionData);
-    await session.save();
+    const session = await Session.findOneAndUpdate(
+      { sessionId },
+      sessionData,
+      { new: true, upsert: true }
+    );
 
     // Cache in memory (expires in 1 hour handling not strictly needed for Map but could clear on interval if needed)
     sessionCache.set(sessionId, sessionData);
@@ -171,38 +178,38 @@ router.post('/start', async (req: Request, res: Response) => {
 
 // POST /submit
 router.post('/submit', async (req: Request, res: Response) => {
-    const { sessionId, code, transcript = [] } = req.body;
+  const { sessionId, code, transcript = [] } = req.body;
 
-    try {
-      const session = await Session.findOne({ sessionId });
-      if (!session) {
-        return res.status(404).json({ error: 'Session not found' });
-      }
-
-      session.code = code;
-      session.transcript = transcript;
-      session.status = 'completed';
-
-      console.log("Evaluating session...");
-      const evaluation = await evaluateSession(
-        session.question,
-        code,
-        transcript
-      );
-
-      session.feedback = evaluation;
-      await session.save();
-
-      // Update cache
-      sessionCache.set(sessionId, session.toObject());
-
-      res.json({
-        feedback: session.feedback
-      });
-    } catch (error) {
-      console.error('Error submitting session:', error);
-      res.status(500).json({ error: 'Failed to submit session' });
+  try {
+    const session = await Session.findOne({ sessionId });
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
     }
+
+    session.code = code;
+    session.transcript = transcript;
+    session.status = 'completed';
+
+    console.log("Evaluating session...");
+    const evaluation = await evaluateSession(
+      session.question,
+      code,
+      transcript
+    );
+
+    session.feedback = evaluation;
+    await session.save();
+
+    // Update cache
+    sessionCache.set(sessionId, session.toObject());
+
+    res.json({
+      feedback: session.feedback
+    });
+  } catch (error) {
+    console.error('Error submitting session:', error);
+    res.status(500).json({ error: 'Failed to submit session' });
+  }
 });
 
 // GET /session/:sessionId

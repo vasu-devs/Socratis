@@ -1,7 +1,5 @@
-livekit>=0.18.2
-livekit-agents>=0.12.6
+livekit-agents
 livekit-plugins-deepgram
-livekit-plugins-groq
+livekit-plugins-openai
 livekit-plugins-silero
-livekit-plugins-turn-detector
 python-dotenv

@@ -13,13 +13,14 @@ export function useLiveKitInterview({ sessionId, participantName, onCallEnd }: U
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [transcript, setTranscript] = useState<Array<{ role: 'ai' | 'user', content: string }>>([]);
+    const [audioTracks, setAudioTracks] = useState(0);
 
     const startSession = useCallback(async () => {
         try {
             const response = await fetch('http://localhost:4000/api/livekit/token', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId, participantName })
+                body: JSON.stringify({ sessionId, participantName: `${participantName}-${Math.floor(Math.random() * 1000)}` })
             });
 
             if (!response.ok) throw new Error('Failed to fetch LiveKit token');
@@ -31,7 +32,12 @@ export function useLiveKitInterview({ sessionId, participantName, onCallEnd }: U
                 dynacast: true,
             });
 
-            await newRoom.connect(url, token);
+            await newRoom.connect(url, token, {
+                autoSubscribe: true,
+                rtcConfig: {
+                    iceTransportPolicy: 'relay',
+                }
+            });
 
             // Explicitly enable microphone to trigger browser permission request
             await newRoom.localParticipant.setMicrophoneEnabled(true);
@@ -43,6 +49,14 @@ export function useLiveKitInterview({ sessionId, participantName, onCallEnd }: U
             newRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
                 if (track.kind === Track.Kind.Audio) {
                     track.attach();
+                    setAudioTracks(prev => prev + 1);
+                }
+            });
+
+            newRoom.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+                if (track.kind === Track.Kind.Audio) {
+                    track.detach();
+                    setAudioTracks(prev => Math.max(0, prev - 1));
                 }
             });
 
@@ -106,6 +120,18 @@ export function useLiveKitInterview({ sessionId, participantName, onCallEnd }: U
         }
     }, [room, isMuted]);
 
+    const sendData = useCallback(async (data: any) => {
+        if (room && room.localParticipant) {
+            try {
+                const strData = JSON.stringify(data);
+                const encoder = new TextEncoder();
+                await room.localParticipant.publishData(encoder.encode(strData), { reliable: true });
+            } catch (e) {
+                console.error("Failed to publish data:", e);
+            }
+        }
+    }, [room]);
+
     useEffect(() => {
         return () => {
             if (room) {
@@ -121,6 +147,8 @@ export function useLiveKitInterview({ sessionId, participantName, onCallEnd }: U
         transcript,
         startSession,
         stopSession,
-        toggleMute
+        toggleMute,
+        audioTracks,
+        sendData
     };
 }
