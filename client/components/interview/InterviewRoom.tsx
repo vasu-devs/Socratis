@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { CodeEditor } from './CodeEditor';
 import { VoiceComponent } from './VoiceComponent';
-import { FileCode, Sparkles, ChevronLeft } from 'lucide-react';
+import { FileCode, Sparkles, ChevronLeft, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 import {
     LiveKitRoom,
@@ -43,18 +43,21 @@ const ActiveInterviewSession = ({
     code,
     setCode,
     sessionId,
+    transcript,
+    setTranscript,
     onEndCall
 }: {
     question: Question;
     code: string;
     setCode: (c: string) => void;
     sessionId: string;
+    transcript: Array<{ role: 'ai' | 'user', content: string }>;
+    setTranscript: React.Dispatch<React.SetStateAction<Array<{ role: 'ai' | 'user', content: string }>>>;
     onEndCall: () => void;
 }) => {
     const room = useRoomContext();
     const { localParticipant } = useLocalParticipant();
     const remoteParticipants = useRemoteParticipants();
-    const [transcript, setTranscript] = useState<Array<{ role: 'ai' | 'user', content: string }>>([]);
     const [isSpeaking, setIsSpeaking] = useState(false);
 
     // Check if AI agent (remote) is speaking
@@ -86,8 +89,9 @@ const ActiveInterviewSession = ({
 
                     // Termination check
                     if (data.role === 'user') {
-                        const terminationRegex = /(I('?m| am) done|End (the )?(interview|test|call)|That'?s all|Stop the interview)/i;
+                        const terminationRegex = /(I('?m| am) done|End (the )?(interview|test|call)|That'?s all|Stop the interview|submit|finish)/i;
                         if (terminationRegex.test(data.text)) {
+                            console.log("🔴 TERMINATION DETECTED via data channel:", data.text);
                             onEndCall();
                         }
                     }
@@ -97,6 +101,37 @@ const ActiveInterviewSession = ({
         room.on(RoomEvent.DataReceived, handleData);
         return () => { room.off(RoomEvent.DataReceived, handleData); };
     }, [room, onEndCall]);
+
+    // LiveKit Transcription Event - PRIMARY termination detection
+    useEffect(() => {
+        const handleTranscription = (segments: any, participant?: any, publication?: any) => {
+            console.log("📝 Transcription received:", segments);
+
+            segments.forEach((segment: any) => {
+                const text = segment.text || '';
+                const isFinal = segment.final;
+
+                // Add to transcript
+                if (isFinal && text) {
+                    const role = participant?.identity?.includes('agent') ? 'ai' : 'user';
+                    setTranscript(prev => [...prev, { role, content: text }]);
+
+                    // Check for termination phrases FROM USER
+                    if (role === 'user') {
+                        const terminationRegex = /(I('?m| am) done|End (the )?(interview|test|call)|That'?s all|Stop the interview|submit|finish|I am done|Im done)/i;
+                        if (terminationRegex.test(text)) {
+                            console.log("🔴 TERMINATION DETECTED via transcription:", text);
+                            setTimeout(() => onEndCall(), 1000); // Small delay for UX
+                        }
+                    }
+                }
+            });
+        };
+
+        room.on(RoomEvent.TranscriptionReceived, handleTranscription);
+        return () => { room.off(RoomEvent.TranscriptionReceived, handleTranscription); };
+    }, [room, onEndCall]);
+
 
     // Send Code Updates
     useEffect(() => {
@@ -182,6 +217,9 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
     const [token, setToken] = useState<string>("");
     const [wsUrl, setWsUrl] = useState<string>("");
 
+    // Transcript state - lifted to parent for submission
+    const [transcript, setTranscript] = useState<Array<{ role: 'ai' | 'user', content: string }>>([]);
+
     // UI State
     const [hasStarted, setHasStarted] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
@@ -216,6 +254,19 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
         fetchSession();
     }, [initialSessionId]);
 
+    // Keyboard shortcut: Ctrl+Enter to submit
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                handleEndCall();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [code, currentSessionId]); // Re-bind when these change
+
+
     // Fetch Token on "Start Interview"
     const handleStartInterview = async () => {
         setHasStarted(true);
@@ -241,9 +292,32 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
         }
     };
 
-    const handleEndCall = () => {
-        setToken("");
-        router.push(`/interview/${currentSessionId}/result`); // Naive end
+    const handleEndCall = async () => {
+        try {
+            // Submit code and transcript to backend for evaluation
+            console.log("Submitting interview data...");
+            const submitResponse = await fetch('http://localhost:4000/api/submit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sessionId: currentSessionId,
+                    code: code,
+                    transcript: transcript // Now passes actual transcript from state
+                })
+            });
+
+            if (submitResponse.ok) {
+                console.log("Interview submitted successfully!");
+            } else {
+                console.error("Failed to submit interview:", await submitResponse.text());
+            }
+        } catch (error) {
+            console.error("Error submitting interview:", error);
+        } finally {
+            // Always navigate to results, even if submission fails
+            setToken("");
+            router.push(`/interview/${currentSessionId}/result`);
+        }
     };
 
     return (
@@ -280,7 +354,7 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
             )}
 
             {/* Header */}
-            <header className="h-14 border-b border-slate-100 flex items-center justify-between px-6 shrink-0 z-20 bg-white">
+            <header className="h-16 border-b border-slate-100 flex items-center justify-between px-6 shrink-0 z-20 bg-white shadow-sm">
                 <div className="flex items-center gap-4">
                     <Link href="/" className="text-slate-400 hover:text-slate-900 transition-colors">
                         <ChevronLeft size={20} />
@@ -293,8 +367,13 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
                         <Sparkles size={14} className="text-blue-500" />
                         <span className="text-[12px] font-bold text-slate-500 uppercase tracking-wider">Llama 3.3 Active</span>
                     </div>
-                    <button onClick={handleEndCall} className="bg-slate-950 text-white px-4 py-1.5 rounded-full text-[13px] font-bold hover:bg-slate-800 transition-all active:scale-95">
-                        Submit Implementation
+                    <button
+                        onClick={handleEndCall}
+                        className="bg-emerald-600 text-white px-6 py-2.5 rounded-full text-sm font-bold hover:bg-emerald-700 transition-all active:scale-95 shadow-lg shadow-emerald-500/25 flex items-center gap-2"
+                        title="Click to submit or press Ctrl+Enter"
+                    >
+                        <CheckCircle2 size={16} />
+                        Submit & Get Report
                     </button>
                 </div>
             </header>
@@ -314,6 +393,8 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
                         code={code}
                         setCode={setCode}
                         sessionId={currentSessionId}
+                        transcript={transcript}
+                        setTranscript={setTranscript}
                         onEndCall={handleEndCall}
                     />
                     <StartAudio label="Click to enable audio" />

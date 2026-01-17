@@ -152,9 +152,24 @@ If the code looks good, push them on optimization. If it looks bad, guide them t
         logger.error(f"[STEP 6] Traceback:\n{traceback.format_exc()}")
         return
     
-    logger.info("[STEP 7] Waiting 3 seconds for WebRTC/audio pipeline to stabilize...")
-    await asyncio.sleep(3)
-    logger.info("[STEP 7] Connection should be stable now")
+    
+    # STEP 7: Wait for participant to be FULLY ready to receive audio
+    logger.info("[STEP 7] Waiting for participant audio track to be ready...")
+    
+    # Wait for remote participant to join
+    max_wait = 10  # seconds
+    elapsed = 0
+    while len(ctx.room.remote_participants) == 0 and elapsed < max_wait:
+        await asyncio.sleep(0.5)
+        elapsed += 0.5
+    
+    if len(ctx.room.remote_participants) > 0:
+        logger.info(f"[STEP 7] Participant detected! Waiting 1.5s for audio pipeline...")
+        await asyncio.sleep(1.5)  # Brief wait for audio pipeline to stabilize
+        logger.info("[STEP 7] Audio pipeline ready - proceeding with greeting")
+    else:
+        logger.warning("[STEP 7] No participant detected after 10s, proceeding anyway...")
+    
     
     # STEP 8: Send greeting and publish to transcript
     logger.info("=" * 70)

@@ -2,9 +2,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { Editor } from '@monaco-editor/react';
-import { ArrowLeft, CheckCircle2, ChevronRight, Share2, Sparkles, Trophy, TrendingUp, Brain, Code2, TestTube, Clock, MessageSquare, Target, AlertCircle, Lightbulb, ArrowRight } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Star, Trophy, Brain, Code2, TestTube, Clock, MessageSquare, Target, Lightbulb, ArrowRight, Sparkles } from 'lucide-react';
 import Link from 'next/link';
-import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
+import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
 
 interface SessionResult {
     question: {
@@ -12,6 +12,7 @@ interface SessionResult {
         description: string;
     };
     code: string;
+    transcript?: Array<{ role: 'user' | 'ai' | 'assistant'; content: string }>;
     feedback?: {
         overall_score: number;
         correctness: boolean;
@@ -27,7 +28,6 @@ interface SessionResult {
     };
 }
 
-// Helper function to parse markdown into structured sections
 function parseMarkdownSections(markdown: string) {
     const sections: Record<string, string> = {};
     const lines = markdown.split('\n');
@@ -53,7 +53,6 @@ function parseMarkdownSections(markdown: string) {
     return sections;
 }
 
-// Extract bullet points from text
 function extractBullets(text: string): string[] {
     return text.split('\n')
         .filter(line => line.trim().startsWith('-') || line.trim().startsWith('*'))
@@ -78,297 +77,359 @@ export default function ResultPage({ params }: { params: { id: string } }) {
         fetchResult();
     }, [params.id]);
 
-    if (loading) return (
-        <div className="flex flex-col items-center justify-center h-screen bg-white">
-            <div className="bg-grid absolute inset-0 opacity-40 pointer-events-none" />
-            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
-            <p className="text-slate-400 font-mono text-xs uppercase tracking-widest">Generating Your Smart Report...</p>
-        </div>
-    );
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-white flex items-center justify-center">
+                <div className="text-center">
+                    <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                    <p className="text-slate-500 font-medium">Analyzing Your Performance...</p>
+                </div>
+            </div>
+        );
+    }
 
-    if (!session || !session.feedback) return <div className="p-20 text-center text-red-500">Session data not available.</div>;
+    if (!session || !session.feedback) {
+        return (
+            <div className="min-h-screen bg-white flex items-center justify-center">
+                <div className="text-center max-w-md">
+                    <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                        <Lightbulb className="w-8 h-8 text-red-500" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-slate-900 mb-3">Session data not available</h2>
+                    <p className="text-slate-500 mb-8">Complete an interview to see your results here.</p>
+                    <Link
+                        href="/interview/new"
+                        className="inline-flex items-center gap-2 px-6 py-3 bg-[#0066FF] text-white rounded-full font-semibold hover:bg-blue-600 transition-all"
+                    >
+                        Start New Interview <ArrowRight className="w-4 h-4" />
+                    </Link>
+                </div>
+            </div>
+        );
+    }
 
-    const dimensions = session.feedback.dimension_scores;
+    const { feedback, question, code } = session;
+    const sections = parseMarkdownSections(feedback.feedback_markdown);
+
+    // Radar chart data
     const radarData = [
-        { dimension: 'Problem Solving', score: dimensions.problem_solving, fullMark: 10 },
-        { dimension: 'Algorithmic', score: dimensions.algorithmic_thinking, fullMark: 10 },
-        { dimension: 'Code Quality', score: dimensions.code_implementation, fullMark: 10 },
-        { dimension: 'Testing', score: dimensions.testing, fullMark: 10 },
-        { dimension: 'Time Mgmt', score: dimensions.time_management, fullMark: 10 },
-        { dimension: 'Communication', score: dimensions.communication, fullMark: 10 },
+        { dimension: 'Problem Solving', score: feedback.dimension_scores.problem_solving },
+        { dimension: 'Algorithm', score: feedback.dimension_scores.algorithmic_thinking },
+        { dimension: 'Code Quality', score: feedback.dimension_scores.code_implementation },
+        { dimension: 'Testing', score: feedback.dimension_scores.testing },
+        { dimension: 'Time Mgmt', score: feedback.dimension_scores.time_management },
+        { dimension: 'Communication', score: feedback.dimension_scores.communication },
     ];
 
-    const barData = [
-        { name: 'Problem Solving', score: dimensions.problem_solving, icon: Brain },
-        { name: 'Algorithmic', score: dimensions.algorithmic_thinking, icon: Target },
-        { name: 'Code Quality', score: dimensions.code_implementation, icon: Code2 },
-        { name: 'Testing', score: dimensions.testing, icon: TestTube },
-        { name: 'Time Mgmt', score: dimensions.time_management, icon: Clock },
-        { name: 'Communication', score: dimensions.communication, icon: MessageSquare },
-    ];
+    const getPerformanceLabel = (score: number) => {
+        if (score >= 9) return 'Outstanding';
+        if (score >= 7) return 'Excellent';
+        if (score >= 5) return 'Good';
+        return 'Needs Work';
+    };
 
     const getScoreColor = (score: number) => {
-        if (score >= 8) return 'text-green-600 bg-green-50 border-green-200';
-        if (score >= 6) return 'text-blue-600 bg-blue-50 border-blue-200';
-        if (score >= 4) return 'text-yellow-600 bg-yellow-50 border-yellow-200';
-        return 'text-red-600 bg-red-50 border-red-200';
+        if (score >= 9) return 'text-emerald-600';
+        if (score >= 7) return 'text-blue-600';
+        if (score >= 5) return 'text-amber-600';
+        return 'text-red-600';
     };
-
-    const getBarColor = (score: number) => {
-        if (score >= 8) return '#10b981';
-        if (score >= 6) return '#3b82f6';
-        if (score >= 4) return '#f59e0b';
-        return '#ef4444';
-    };
-
-    // Parse feedback sections
-    const sections = parseMarkdownSections(session.feedback.feedback_markdown);
-    const strengths = extractBullets(sections['Strengths'] || '');
-    const improvements = extractBullets(sections['Areas for Improvement'] || sections['Areas for improvement'] || '');
-    const nextSteps = extractBullets(sections['Recommended Next Steps'] || '');
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30 pb-20">
-            <div className="bg-grid absolute inset-0 opacity-20 pointer-events-none" />
+        <main className="min-h-screen relative overflow-hidden bg-white">
+            {/* Background effects matching home page */}
+            <div className="absolute inset-0 bg-grid pointer-events-none opacity-30" />
+            <div className="absolute top-[-20%] right-[-10%] w-[50%] h-[50%] bg-glow-blue blur-[120px] rounded-full opacity-40" />
+            <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-500/5 blur-[100px] rounded-full" />
 
             {/* Header */}
-            <header className="relative z-10 h-16 bg-white/80 backdrop-blur-md border-b border-slate-100 flex items-center justify-between px-8">
-                <div className="flex items-center gap-6">
-                    <Link href="/" className="text-slate-400 hover:text-slate-900 transition-colors">
-                        <ArrowLeft size={18} />
+            <header className="relative z-20 border-b border-slate-100 bg-white/80 backdrop-blur-sm sticky top-0">
+                <div className="max-w-7xl mx-auto px-8 py-5 flex items-center justify-between">
+                    <Link
+                        href="/"
+                        className="flex items-center gap-3 text-slate-600 hover:text-slate-900 transition-colors group"
+                    >
+                        <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                        <span className="font-semibold">Back to Home</span>
                     </Link>
-                    <div className="flex items-center gap-2">
-                        <span className="text-slate-300 text-sm font-medium">Smart Report</span>
-                        <ChevronRight size={14} className="text-slate-300" />
-                        <span className="text-slate-900 text-sm font-bold tracking-tight">{session.question.title}</span>
+                    <div className="flex items-center gap-3">
+                        <div className="px-4 py-2 bg-slate-50 rounded-full border border-slate-100">
+                            <span className="text-sm font-bold text-slate-600">{question.title}</span>
+                        </div>
                     </div>
-                </div>
-                <div className="flex items-center gap-3">
-                    <button className="p-2 text-slate-400 hover:text-slate-900 transition-all">
-                        <Share2 size={18} />
-                    </button>
-                    <Link href="/" className="bg-slate-950 text-white px-5 py-2 rounded-full text-[13px] font-bold active:scale-95 transition-all shadow-sm">
-                        New Session
-                    </Link>
                 </div>
             </header>
 
-            <main className="relative z-10 max-w-7xl mx-auto px-8 py-8">
-                {/* Top Stats Row */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-                    {/* Overall Score Card */}
-                    <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-3xl p-6 text-white col-span-1 md:col-span-2 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 opacity-10">
-                            <Trophy size={120} />
-                        </div>
-                        <div className="relative z-10">
-                            <div className="flex items-center gap-2 mb-2">
-                                <Sparkles className="w-4 h-4" />
-                                <span className="text-xs font-bold uppercase tracking-wider opacity-90">Overall Performance</span>
-                            </div>
-                            <div className="flex items-end gap-2 mb-2">
-                                <span className="text-7xl font-black">{session.feedback.overall_score}</span>
-                                <span className="text-3xl font-light opacity-70 pb-2">/10</span>
-                            </div>
-                            <p className="text-sm opacity-90">
-                                {session.feedback.overall_score >= 8 ? 'Excellent Performance! 🎉' :
-                                    session.feedback.overall_score >= 6 ? 'Good Work! Keep Improving 👍' :
-                                        'Room for Growth 💪'}
-                            </p>
-                        </div>
+            <div className="relative z-10 max-w-7xl mx-auto px-8 py-16">
+                {/* Hero Score Section */}
+                <div className="text-center mb-20">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-100 mb-6">
+                        <Star className="w-3 h-3 text-[#0066FF] fill-[#0066FF]" />
+                        <span className="text-[12px] font-bold uppercase tracking-wider text-[#0066FF]">Interview Complete</span>
                     </div>
 
-                    {/* Correctness Card */}
-                    <div className={`rounded-3xl p-6 border-2 ${session.feedback.correctness ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                        <div className="flex items-center gap-2 mb-3">
-                            {session.feedback.correctness ?
-                                <CheckCircle2 className="w-5 h-5 text-green-600" /> :
-                                <AlertCircle className="w-5 h-5 text-red-600" />
-                            }
-                            <span className={`text-xs font-bold uppercase tracking-wider ${session.feedback.correctness ? 'text-green-700' : 'text-red-700'}`}>
-                                Correctness
-                            </span>
-                        </div>
-                        <p className={`text-2xl font-bold ${session.feedback.correctness ? 'text-green-700' : 'text-red-700'}`}>
-                            {session.feedback.correctness ? 'PASS ✓' : 'FAIL ✗'}
-                        </p>
-                        <p className={`text-xs mt-1 ${session.feedback.correctness ? 'text-green-600' : 'text-red-600'}`}>
-                            {session.feedback.correctness ? 'Logic verified' : 'Needs fixes'}
-                        </p>
-                    </div>
+                    <h1 className="text-6xl md:text-7xl font-bold tracking-tight text-slate-950 mb-6">
+                        {getPerformanceLabel(feedback.overall_score)}
+                        <span className="block text-4xl md:text-5xl text-slate-400 font-normal mt-2">
+                            Performance
+                        </span>
+                    </h1>
 
-                    {/* Top Dimension Card */}
-                    <div className="bg-purple-50 border-2 border-purple-200 rounded-3xl p-6">
-                        <div className="flex items-center gap-2 mb-3">
-                            <TrendingUp className="w-5 h-5 text-purple-600" />
-                            <span className="text-xs font-bold uppercase tracking-wider text-purple-700">Top Skill</span>
+                    <div className="inline-flex items-center gap-4 px-8 py-6 bg-white rounded-3xl shadow-lg shadow-blue-500/5 border border-slate-100">
+                        <div className="text-center">
+                            <div className={`text-6xl font-bold ${getScoreColor(feedback.overall_score)}`}>
+                                {feedback.overall_score}
+                            </div>
+                            <div className="text-sm font-medium text-slate-400 uppercase tracking-wider mt-1">
+                                Out of 10
+                            </div>
                         </div>
-                        {(() => {
-                            const topDim = Object.entries(dimensions).reduce((a, b) => a[1] > b[1] ? a : b);
-                            return (
-                                <>
-                                    <p className="text-lg font-bold text-purple-700">
-                                        {topDim[0].replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                                    </p>
-                                    <p className="text-2xl font-black text-purple-600">{topDim[1]}/10</p>
-                                </>
-                            );
-                        })()}
+                        {feedback.correctness && (
+                            <>
+                                <div className="w-px h-16 bg-slate-200" />
+                                <div className="flex items-center gap-2">
+                                    <CheckCircle2 className="w-6 h-6 text-emerald-500 fill-emerald-50" />
+                                    <span className="text-sm font-bold text-emerald-600">Correct Solution</span>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                    {/* Left Column */}
-                    <div className="lg:col-span-5 space-y-6">
-                        {/* Radar Chart */}
-                        <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-lg">
-                            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-6">6-Dimension Analysis</h3>
-                            <ResponsiveContainer width="100%" height={300}>
-                                <RadarChart data={radarData}>
-                                    <PolarGrid stroke="#e2e8f0" />
-                                    <PolarAngleAxis dataKey="dimension" tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }} />
-                                    <PolarRadiusAxis angle={90} domain={[0, 10]} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                                    <Radar name="Score" dataKey="score" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} />
-                                </RadarChart>
-                            </ResponsiveContainer>
-                        </div>
-
-                        {/* Dimension Breakdown */}
-                        <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-lg">
-                            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-6">Score Breakdown</h3>
-                            <div className="space-y-4">
-                                {barData.map((dim, idx) => {
-                                    const Icon = dim.icon;
-                                    return (
-                                        <div key={idx} className="flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
-                                                <Icon size={16} className="text-slate-600" />
-                                            </div>
-                                            <div className="flex-1">
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <span className="text-sm font-semibold text-slate-700">{dim.name}</span>
-                                                    <span className="text-sm font-bold text-slate-900">{dim.score}/10</span>
-                                                </div>
-                                                <div className="w-full bg-slate-100 rounded-full h-2">
-                                                    <div
-                                                        className="h-2 rounded-full transition-all duration-500"
-                                                        style={{
-                                                            width: `${dim.score * 10}%`,
-                                                            backgroundColor: getBarColor(dim.score)
-                                                        }}
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        {/* Problem Context */}
-                        <div className="bg-slate-950 rounded-3xl p-8 text-white">
-                            <h4 className="text-[11px] font-bold text-blue-400 uppercase tracking-widest mb-4">Interview Problem</h4>
-                            <h2 className="text-2xl font-bold mb-3">{session.question.title}</h2>
-                            <p className="text-slate-400 text-sm leading-relaxed italic">
-                                "{session.question.description}"
-                            </p>
-                        </div>
+                {/* Skills Radar */}
+                <div className="mb-20">
+                    <div className="text-center mb-12">
+                        <h2 className="text-3xl font-bold text-slate-950 mb-3">Skills Analysis</h2>
+                        <p className="text-slate-500 max-w-2xl mx-auto">
+                            Your performance across 6 key dimensions evaluated by our AI interviewer
+                        </p>
                     </div>
 
-                    {/* Right Column */}
-                    <div className="lg:col-span-7 space-y-6">
-                        {/* Strengths */}
-                        {strengths.length > 0 && (
-                            <div className="bg-green-50 border-2 border-green-200 rounded-3xl p-8">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <CheckCircle2 className="w-5 h-5 text-green-600" />
-                                    <h3 className="text-sm font-bold text-green-700 uppercase tracking-wider">Key Strengths</h3>
-                                </div>
-                                <ul className="space-y-3">
-                                    {strengths.slice(0, 5).map((strength, idx) => (
-                                        <li key={idx} className="flex items-start gap-3">
-                                            <span className="text-green-600 mt-0.5">✓</span>
-                                            <span className="text-sm text-green-900 leading-relaxed">{strength}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-
-                        {/* Areas for Improvement */}
-                        {improvements.length > 0 && (
-                            <div className="bg-amber-50 border-2 border-amber-200 rounded-3xl p-8">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <AlertCircle className="w-5 h-5 text-amber-600" />
-                                    <h3 className="text-sm font-bold text-amber-700 uppercase tracking-wider">Areas for Improvement</h3>
-                                </div>
-                                <ul className="space-y-3">
-                                    {improvements.slice(0, 5).map((improvement, idx) => (
-                                        <li key={idx} className="flex items-start gap-3">
-                                            <span className="text-amber-600 mt-0.5">→</span>
-                                            <span className="text-sm text-amber-900 leading-relaxed">{improvement}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-
-                        {/* Next Steps */}
-                        {nextSteps.length > 0 && (
-                            <div className="bg-blue-50 border-2 border-blue-200 rounded-3xl p-8">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <Lightbulb className="w-5 h-5 text-blue-600" />
-                                    <h3 className="text-sm font-bold text-blue-700 uppercase tracking-wider">Recommended Next Steps</h3>
-                                </div>
-                                <ul className="space-y-3">
-                                    {nextSteps.slice(0, 5).map((step, idx) => (
-                                        <li key={idx} className="flex items-start gap-3">
-                                            <ArrowRight className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                                            <span className="text-sm text-blue-900 leading-relaxed">{step}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-
-                        {/* Summary */}
-                        {sections['Summary'] && (
-                            <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-lg">
-                                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Executive Summary</h3>
-                                <p className="text-slate-700 leading-relaxed">{sections['Summary']}</p>
-                            </div>
-                        )}
-
-                        {/* Code Display */}
-                        <div className="bg-slate-900 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl">
-                            <div className="px-8 py-5 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between">
-                                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Final Code Solution</span>
-                                <div className="flex gap-1.5">
-                                    <div className="w-2.5 h-2.5 rounded-full bg-slate-700" />
-                                    <div className="w-2.5 h-2.5 rounded-full bg-slate-700" />
-                                    <div className="w-2.5 h-2.5 rounded-full bg-slate-700" />
-                                </div>
-                            </div>
-                            <div className="h-[400px]">
-                                <Editor
-                                    height="100%"
-                                    defaultLanguage="javascript"
-                                    value={session.code}
-                                    theme="vs-dark"
-                                    options={{
-                                        readOnly: true,
-                                        minimap: { enabled: false },
-                                        fontSize: 14,
-                                        padding: { top: 24, bottom: 24 },
-                                        scrollBeyondLastLine: false,
-                                        fontFamily: "'JetBrains Mono', monospace",
-                                    }}
+                    <div className="bg-white rounded-3xl p-12 shadow-sm border border-slate-100">
+                        <ResponsiveContainer width="100%" height={400}>
+                            <RadarChart data={radarData}>
+                                <PolarGrid stroke="#e2e8f0" />
+                                <PolarAngleAxis
+                                    dataKey="dimension"
+                                    tick={{ fill: '#64748b', fontSize: 14, fontWeight: 600 }}
                                 />
-                            </div>
+                                <PolarRadiusAxis angle={90} domain={[0, 10]} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                <Radar
+                                    name="Score"
+                                    dataKey="score"
+                                    stroke="#0066FF"
+                                    fill="#0066FF"
+                                    fillOpacity={0.15}
+                                    strokeWidth={3}
+                                />
+                            </RadarChart>
+                        </ResponsiveContainer>
+
+                        {/* Dimension breakdown */}
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-8">
+                            {[
+                                { key: 'problem_solving', label: 'Problem Solving', icon: Brain },
+                                { key: 'algorithmic_thinking', label: 'Algorithm', icon: Target },
+                                { key: 'code_implementation', label: 'Code Quality', icon: Code2 },
+                                { key: 'testing', label: 'Testing', icon: TestTube },
+                                { key: 'time_management', label: 'Time Mgmt', icon: Clock },
+                                { key: 'communication', label: 'Communication', icon: MessageSquare },
+                            ].map(({ key, label, icon: Icon }) => {
+                                const score = feedback.dimension_scores[key as keyof typeof feedback.dimension_scores];
+                                return (
+                                    <div key={key} className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
+                                        <div className="p-2 bg-white rounded-lg shadow-sm">
+                                            <Icon className="w-4 h-4 text-[#0066FF]" />
+                                        </div>
+                                        <div>
+                                            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">{label}</div>
+                                            <div className={`text-2xl font-bold ${getScoreColor(score)}`}>{score}/10</div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
-            </main>
-        </div>
+
+                {/* Feedback Sections */}
+                <div className="grid md:grid-cols-2 gap-8 mb-20">
+                    {/* Strengths */}
+                    {sections.Strengths && (
+                        <div className="bg-emerald-50/50 rounded-3xl p-10 border border-emerald-100">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="p-3 bg-emerald-500 rounded-xl">
+                                    <Trophy className="w-6 h-6 text-white" />
+                                </div>
+                                <h3 className="text-2xl font-bold text-slate-950">Strengths</h3>
+                            </div>
+                            <ul className="space-y-3">
+                                {extractBullets(sections.Strengths).map((item, i) => (
+                                    <li key={i} className="flex items-start gap-3">
+                                        <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                                        <span className="text-slate-700 leading-relaxed">{item}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
+                    {/* Areas for Improvement */}
+                    {sections['Areas for Improvement'] && (
+                        <div className="bg-amber-50/50 rounded-3xl p-10 border border-amber-100">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="p-3 bg-amber-500 rounded-xl">
+                                    <Lightbulb className="w-6 h-6 text-white" />
+                                </div>
+                                <h3 className="text-2xl font-bold text-slate-950">Growth Areas</h3>
+                            </div>
+                            <ul className="space-y-3">
+                                {extractBullets(sections['Areas for Improvement']).map((item, i) => (
+                                    <li key={i} className="flex items-start gap-3">
+                                        <div className="w-5 h-5 rounded-full bg-amber-200 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                            <span className="text-xs font-bold text-amber-700">{i + 1}</span>
+                                        </div>
+                                        <span className="text-slate-700 leading-relaxed">{item}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+
+                {/* Detailed Analysis Sections */}
+                <div className="space-y-8 mb-20">
+                    <h2 className="text-3xl font-bold text-slate-950 mb-8">Detailed Performance Analysis</h2>
+
+                    {sections['Problem-Solving'] || sections['Problem-Solving Approach'] ? (
+                        <div className="bg-white rounded-3xl p-10 shadow-sm border border-slate-100">
+                            <div className="flex items-center gap-3 mb-4">
+                                <Target className="w-6 h-6 text-[#0066FF]" />
+                                <h3 className="text-2xl font-bold text-slate-950">Problem-Solving Approach</h3>
+                            </div>
+                            <p className="text-slate-700 leading-relaxed text-lg">
+                                {sections['Problem-Solving'] || sections['Problem-Solving Approach'] || sections.Summary}
+                            </p>
+                        </div>
+                    ) : null}
+
+                    {sections['Code Quality'] || sections['Code Implementation'] ? (
+                        <div className="bg-white rounded-3xl p-10 shadow-sm border border-slate-100">
+                            <div className="flex items-center gap-3 mb-4">
+                                <Code2 className="w-6 h-6 text-[#0066FF]" />
+                                <h3 className="text-2xl font-bold text-slate-950">Code Quality Analysis</h3>
+                            </div>
+                            <p className="text-slate-700 leading-relaxed text-lg">
+                                {sections['Code Quality'] || sections['Code Implementation']}
+                            </p>
+                        </div>
+                    ) : null}
+
+                    {sections['Algorithmic Thinking'] ? (
+                        <div className="bg-white rounded-3xl p-10 shadow-sm border border-slate-100">
+                            <div className="flex items-center gap-3 mb-4">
+                                <Brain className="w-6 h-6 text-[#0066FF]" />
+                                <h3 className="text-2xl font-bold text-slate-950">Algorithmic Thinking</h3>
+                            </div>
+                            <p className="text-slate-700 leading-relaxed text-lg">
+                                {sections['Algorithmic Thinking']}
+                            </p>
+                        </div>
+                    ) : null}
+
+                    {sections.Communication ? (
+                        <div className="bg-white rounded-3xl p-10 shadow-sm border border-slate-100">
+                            <div className="flex items-center gap-3 mb-4">
+                                <MessageSquare className="w-6 h-6 text-[#0066FF]" />
+                                <h3 className="text-2xl font-bold text-slate-950">Communication Assessment</h3>
+                            </div>
+                            <p className="text-slate-700 leading-relaxed text-lg">
+                                {sections.Communication}
+                            </p>
+                        </div>
+                    ) : null}
+
+                    {/* Overall Summary */}
+                    {sections.Summary && (
+                        <div className="bg-gradient-to-br from-blue-50 to-white rounded-3xl p-12 shadow-sm border border-blue-100">
+                            <div className="flex items-center gap-3 mb-6">
+                                <Sparkles className="w-7 h-7 text-[#0066FF]" />
+                                <h3 className="text-3xl font-bold text-slate-950">Executive Summary</h3>
+                            </div>
+                            <div className="prose prose-lg prose-slate max-w-none">
+                                <p className="text-slate-700 leading-relaxed text-lg font-medium">{sections.Summary}</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Interview Transcript */}
+                {session.transcript && session.transcript.length > 0 ? (
+                    <div className="bg-slate-950 rounded-3xl p-10 mb-20 overflow-hidden">
+                        <div className="flex items-center gap-3 mb-8">
+                            <MessageSquare className="w-7 h-7 text-white" />
+                            <h3 className="text-3xl font-bold text-white">Interview Transcript</h3>
+                        </div>
+                        <div className="space-y-4 max-h-[600px] overflow-y-auto pr-4 custom-scrollbar">
+                            {session.transcript.map((msg: any, idx: number) => (
+                                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`max-w-[85%] rounded-2xl p-5 ${msg.role === 'user'
+                                        ? 'bg-blue-600 text-white rounded-tr-none'
+                                        : 'bg-slate-800 text-slate-100 rounded-tl-none border border-slate-700'
+                                        }`}>
+                                        <div className="text-xs font-bold uppercase tracking-wider mb-2 opacity-60">
+                                            {msg.role === 'user' ? 'You' : 'Socratis'}
+                                        </div>
+                                        <div className="text-sm leading-relaxed">{msg.content}</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="bg-slate-100 rounded-3xl p-12 mb-20 text-center">
+                        <MessageSquare className="w-12 h-12 text-slate-400 mx-auto mb-4" />
+                        <p className="text-slate-500 text-lg">
+                            No transcript available for this session.
+                            <br />
+                            <span className="text-sm">Enable voice interaction in your next interview to see conversation history.</span>
+                        </p>
+                    </div>
+                )}
+
+
+                {/* Code Display */}
+                <div className="bg-slate-950 rounded-3xl overflow-hidden shadow-xl mb-20">
+                    <div className="px-8 py-5 border-b border-slate-800 flex items-center justify-between">
+                        <h3 className="text-xl font-bold text-white">Your Solution</h3>
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 rounded-lg">
+                            <Code2 className="w-4 h-4 text-slate-400" />
+                            <span className="text-sm font-mono text-slate-300">JavaScript</span>
+                        </div>
+                    </div>
+                    <Editor
+                        height="400px"
+                        language="javascript"
+                        value={code}
+                        theme="vs-dark"
+                        options={{ readOnly: true, minimap: { enabled: false }, fontSize: 14 }}
+                    />
+                </div>
+
+                {/* CTA */}
+                <div className="text-center">
+                    <Link
+                        href="/interview/new"
+                        className="inline-flex items-center gap-2 px-8 py-4 bg-[#0066FF] text-white rounded-full font-bold text-lg hover:bg-blue-600 transition-all shadow-lg shadow-blue-500/25"
+                    >
+                        Practice Another Problem <ArrowRight className="w-5 h-5" />
+                    </Link>
+                </div>
+            </div>
+
+            <footer className="relative z-10 py-12 border-t border-slate-100 text-center text-slate-400 text-sm">
+                <p>© 2026 Socratis Labs. Designed for elite engineers.</p>
+            </footer>
+        </main>
     );
 }
