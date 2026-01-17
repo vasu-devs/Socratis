@@ -20,6 +20,10 @@ from livekit.plugins import deepgram, openai, silero
 env_path = Path(r"E:\Recruitment\Briviio\Socratis\server\agent\.env")
 load_dotenv(dotenv_path=env_path)
 
+# CRITICAL: Apply Deepgram TTS monkey-patch BEFORE using the plugin
+from deepgram_patch import patch_deepgram_tts
+patch_deepgram_tts()
+
 logger = logging.getLogger("socratis-agent")
 logger.setLevel(logging.INFO)
 
@@ -46,7 +50,6 @@ async def entrypoint(ctx: JobContext):
     try:
         logger.info("[STEP 3] - Initializing Deepgram TTS (model: aura-helios-en)...")
         deepgram_tts = deepgram.TTS(
-            api_key=os.environ.get("DEEPGRAM_API_KEY"),
             model="aura-helios-en"
         )
         logger.info("[STEP 3] - Deepgram TTS initialized successfully")
@@ -164,8 +167,8 @@ If the code looks good, push them on optimization. If it looks bad, guide them t
         elapsed += 0.5
     
     if len(ctx.room.remote_participants) > 0:
-        logger.info(f"[STEP 7] Participant detected! Waiting 1.5s for audio pipeline...")
-        await asyncio.sleep(1.5)  # Brief wait for audio pipeline to stabilize
+        logger.info(f"[STEP 7] Participant detected! Waiting 3s for audio pipeline to fully stabilize...")
+        await asyncio.sleep(3)  # Increased from 1.5s - ensures audio receiver is FULLY ready
         logger.info("[STEP 7] Audio pipeline ready - proceeding with greeting")
     else:
         logger.warning("[STEP 7] No participant detected after 10s, proceeding anyway...")

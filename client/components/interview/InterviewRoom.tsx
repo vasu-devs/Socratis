@@ -60,6 +60,24 @@ const ActiveInterviewSession = ({
     const remoteParticipants = useRemoteParticipants();
     const [isSpeaking, setIsSpeaking] = useState(false);
 
+    // CRITICAL: Explicitly handle remote audio tracks to ensure agent voice plays
+    useEffect(() => {
+        const handleTrackSubscribed = (track: any, publication: any, participant: any) => {
+            if (track.kind === 'audio') {
+                console.log("🔊 Agent audio track subscribed:", track);
+                // Create audio element and play
+                const audioEl = track.attach();
+                audioEl.autoplay = true;
+                audioEl.volume = 1.0;
+                document.body.appendChild(audioEl);
+                console.log("🔊 Agent audio element attached and playing");
+            }
+        };
+
+        room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
+        return () => { room.off(RoomEvent.TrackSubscribed, handleTrackSubscribed); };
+    }, [room]);
+
     // Check if AI agent (remote) is speaking
     useEffect(() => {
         const checkSpeaking = () => {
