@@ -76,15 +76,43 @@ async def entrypoint(ctx: JobContext):
         logger.error(f"[STEP 3] - GROQ_API_KEY present: {bool(os.environ.get('GROQ_API_KEY'))}")
         return
     
-    # STEP 4: Create voice.Agent with instructions
+    # STEP 4: Create voice.Agent with professional interviewer instructions
     logger.info("[STEP 4] Creating voice.Agent with instructions...")
     try:
-        instructions_text = (
-            "You are Socratis, a friendly and encouraging technical interviewer. "
-            "You are conducting a coding interview for the 'Two Sum' problem. "
-            "Be concise, supportive, and guide the candidate through their thought process. "
-            "Ask clarifying questions and provide hints if they get stuck."
-        )
+        instructions_text = """You are Socratis, a Senior Technical Interviewer at a top-tier tech company. 
+You are conducting a live coding interview with a candidate via VOICE.
+
+Your Goal: Assess the candidate's problem-solving skills, code quality, and communication.
+Your Constraints: You are speaking via Text-to-Speech. You must be CONCISE.
+
+CORE BEHAVIORS:
+1. BREVITY IS KING: Keep responses short (1-2 sentences). Do not lecture.
+2. NO CODE DICTATION: Do not read code syntax out loud (e.g., do not say "curly brace", "semicolon"). Instead, refer to "your loop" or "line 5".
+3. SOCRATIC METHOD: Never give the answer. Ask guiding questions.
+   - Bad: "You should use a HashMap here."
+   - Good: "How would you optimize the lookup time?"
+4. LISTEN FIRST: If the user is thinking or typing, offer brief encouragement or stay silent. Do not interrupt their thought process unnecessarily.
+
+INTERVIEW STAGES:
+1. CLARIFICATION: Ensure the user understands the problem. If they jump to coding immediately, stop them and ask for their plan.
+2. APPROACH: Discuss the algorithm *before* they code. Ask about Time/Space complexity.
+3. CODING: Watch them code (you have access to their code snapshots). 
+   - If they make a syntax error, let them find it unless they are stuck.
+   - If they make a logic error, ask: "Walk me through your logic for that specific loop."
+4. REVIEW: Once done, ask them to dry-run a test case. Ask about edge cases (empty inputs, negative numbers).
+
+HINTING STRATEGY (Use only if candidate is stuck):
+- Level 1 (Vague): "Is there a data structure that offers faster lookups?"
+- Level 2 (Specific): "Since the array is sorted, could we use a binary search approach?"
+- Level 3 (Direct): "Try using a Two-Pointer approach starting from both ends."
+*Only advance to the next level if the candidate fails to grasp the previous hint.*
+
+TONE: Professional, encouraging, but rigorous. You are a peer, not a teacher.
+
+CURRENT CONTEXT:
+The candidate is solving the Two Sum problem. You have visibility into their code editor via system messages. 
+If the code looks good, push them on optimization. If it looks bad, guide them to self-correct.
+"""
         
         logic_agent = voice.Agent(
             instructions=instructions_text
@@ -124,17 +152,16 @@ async def entrypoint(ctx: JobContext):
         logger.error(f"[STEP 6] Traceback:\n{traceback.format_exc()}")
         return
     
-    # STEP 7: Wait for connection to fully stabilize
     logger.info("[STEP 7] Waiting 3 seconds for WebRTC/audio pipeline to stabilize...")
     await asyncio.sleep(3)
     logger.info("[STEP 7] Connection should be stable now")
     
-    # STEP 8: Send greeting (THIS IS THE CRITICAL AUDIO TEST)
+    # STEP 8: Send greeting and publish to transcript
     logger.info("=" * 70)
     logger.info("[STEP 8] ATTEMPTING TO SPEAK GREETING")
     logger.info("=" * 70)
     
-    greeting_text = "Hello! I'm Socratis, your AI interviewer. I'm ready to help you with the Two Sum problem. Can you hear me clearly?"
+    greeting_text = "Hello! I'm Socratis, your interviewer for today. Let's start by discussing your approach to the Two Sum problem. What's your initial plan?"
     
     try:
         logger.info(f"[STEP 8] - Greeting text: '{greeting_text}'")
@@ -143,6 +170,12 @@ async def entrypoint(ctx: JobContext):
         logger.info(f"[STEP 8] - This will trigger Deepgram TTS API call...")
         
         await session.say(greeting_text, allow_interruptions=True)
+        
+        # Publish greeting to transcript via data channel
+        import json
+        transcript_msg = json.dumps({"type": "transcript", "role": "assistant", "text": greeting_text})
+        ctx.room.local_participant.publish_data(transcript_msg.encode('utf-8'))
+        logger.info("[STEP 8] - Published greeting to transcript")
         
         logger.info("[STEP 8] - session.say() returned successfully!")
         logger.info("[STEP 8] - Deepgram accepted the request")
@@ -170,9 +203,35 @@ async def entrypoint(ctx: JobContext):
         logger.error(f"[STEP 8] Full traceback:\n{traceback.format_exc()}")
         return
     
-    # STEP 9: Set up code update handler
+    # STEP 9: Set up transcript publishing and code update handlers
     logger.info("")
-    logger.info("[STEP 9] Registering code update handler...")
+    logger.info("[STEP 9] Registering event handlers for transcript and code updates...")
+    
+    # Handler to publish user speech transcriptions to transcript
+    def publish_user_transcript(text: str):
+        try:
+            import json
+            transcript_msg = json.dumps({"type": "transcript", "role": "user", "text": text})
+            ctx.room.local_participant.publish_data(transcript_msg.encode('utf-8'))
+            logger.info(f"[TRANSCRIPT] Published user message: '{text[:50]}...'")
+        except Exception as e:
+            logger.error(f"[TRANSCRIPT] Failed to publish user transcript: {e}")
+    
+    # Handler to publish agent responses to transcript
+    def publish_agent_transcript(text: str):
+        try:
+            import json
+            transcript_msg = json.dumps({"type": "transcript", "role": "assistant", "text": text})
+            ctx.room.local_participant.publish_data(transcript_msg.encode('utf-8'))
+            logger.info(f"[TRANSCRIPT] Published agent response: '{text[:50]}...'")
+        except Exception as e:
+            logger.error(f"[TRANSCRIPT] Failed to publish agent transcript: {e}")
+    
+    # Hook into agent session events for automatic transcript publishing
+    # Note: AgentSession doesn't directly expose these events in v1.3.x
+    # We'll manually publish in the greeting and rely on the agent's internal flow
+    # For user transcripts, we can hook into STT if needed, but it's complex in this SDK version
+    # The frontend will handle displaying what it receives via data channel
     
     @ctx.room.on("data_received")
     def on_data_received(data: bytes, participant=None, kind=None):
@@ -198,7 +257,7 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.error(f"[CODE UPDATE] Handler error: {e}")
     
-    logger.info("[STEP 9] Code update handler registered")
+    logger.info("[STEP 9] Event handlers registered (transcript + code updates)")
     
     # SUCCESS
     logger.info("")

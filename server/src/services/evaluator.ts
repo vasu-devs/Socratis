@@ -7,8 +7,16 @@ dotenv.config();
 let groq: Groq | null = null;
 
 export interface EvaluationResult {
-  score: number; // 1-10
-  correctness: boolean; // Did code pass edge cases?
+  overall_score: number; // 1-10
+  correctness: boolean;
+  dimension_scores: {
+    problem_solving: number; // 1-10
+    algorithmic_thinking: number; // 1-10
+    code_implementation: number; // 1-10
+    testing: number; // 1-10
+    time_management: number; // 1-10
+    communication: number; // 1-10
+  };
   feedback_markdown: string; // Detailed feedback
 }
 
@@ -21,8 +29,16 @@ export async function evaluateSession(
   if (!process.env.GROQ_API_KEY) {
     console.warn("GROQ_API_KEY missing. Returning stub evaluation.");
     return {
-      score: 1,
+      overall_score: 1,
       correctness: false,
+      dimension_scores: {
+        problem_solving: 1,
+        algorithmic_thinking: 1,
+        code_implementation: 1,
+        testing: 1,
+        time_management: 1,
+        communication: 1
+      },
       feedback_markdown: "## Error\n\nEvaluation service is not configured (missing API Key)."
     };
   }
@@ -31,47 +47,113 @@ export async function evaluateSession(
     groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
   }
 
-  const systemPrompt = `You are a Senior Technical Interviewer in a coding interview at a top-tier tech company.
-Your goal is to evaluate the candidate's solution and their communication based on the provided inputs.
+  const systemPrompt = `You are a Senior Technical Interviewer at a FAANG company conducting a rigorous technical evaluation.
 
-**Data Provided:**
-1. **Question:** ${question.title} - ${question.description}
-2. **Examples:** ${question.examples.join('\n')}
-3. **Candidate Code:** The final code submitted.
-4. **Transcript:** The conversation history.
+**Problem Context:**
+- Question: ${question.title}
+- Description: ${question.description}
+- Examples: ${question.examples.join('\n')}
 
-**Evaluation Criteria:**
-- **Correctness:** Does the code solve the problem? Does it handle edge cases?
-- **Optimality:** Is the time/space complexity roughly optimal?
-- **Code Quality:** Naming, structure, readability.
-- **Communication:** How well did the candidate explain their approach?
+**Your Task:**
+Analyze the candidate's performance across 6 critical dimensions using BOTH their code and conversation transcript.
+
+**6-Dimensional Evaluation Framework:**
+
+1. **Problem-Solving Approach (1-10)**
+   - Did they clarify requirements before coding?
+   - Did they discuss multiple approaches?
+   - Did they break down the problem logically?
+
+2. **Algorithmic Thinking (1-10)**
+   - Did they identify optimal time/space complexity?
+   - Did they discuss trade-offs?
+   - Pattern recognition and data structure selection?
+
+3. **Code Implementation (1-10)**
+   - Clean, readable, well-structured code?
+   - Proper variable naming and organization?
+   - Bug-free or minimal syntax errors?
+
+4. **Testing & Edge Cases (1-10)**
+   - Did they dry-run their solution?
+   - Did they identify edge cases (empty input, negatives, duplicates)?
+   - Did they test their logic?
+
+5. **Time Management (1-10)**
+   - Efficient use of interview time?
+   - Didn't get stuck too long on one approach?
+   - Balanced planning vs. coding?
+
+6. **Communication (1-10)**
+   - Clear explanations of their thinking?
+   - Responsive to interviewer questions/hints?
+   - Collaborative and professional tone?
 
 **Output Requirements:**
-You must return a STRICT JSON object in the following format:
+Return STRICT JSON with this exact structure:
 {
-  "score": number, // 1-10 integer
-  "correctness": boolean,
-  "feedback_markdown": "string" // A helpful, constructive review formatted in Markdown.
+  "overall_score": number, // 1-10 (weighted average or holistic assessment)
+  "correctness": boolean, // Does the code solve the problem?
+  "dimension_scores": {
+    "problem_solving": number,
+    "algorithmic_thinking": number,
+    "code_implementation": number,
+    "testing": number,
+    "time_management": number,
+    "communication": number
+  },
+  "feedback_markdown": "string"
 }
 
-**Feedback Markdown Content:**
-The "feedback_markdown" MUST contain the following sections explicitly:
-- ### What was done well
-- ### What could be improved
-- ### Missing edge cases
-- ### Next steps for preparation
+**Feedback Markdown Structure:**
+The feedback_markdown MUST include these sections (use ### for headers):
 
-If the code is empty or nonsensical, mark correctness as false and score low, but still provide the sections.`;
+### Summary
+Brief 2-3 sentence overview of performance.
+
+### Problem-Solving Approach
+Analysis of how they approached the problem based on transcript.
+
+### Code Quality & Implementation
+Detailed code review (readability, structure, correctness).
+
+### Algorithmic Efficiency
+Time/Space complexity analysis. Was it optimal?
+
+### Communication & Collaboration
+How well did they explain? Did they respond to hints?
+
+### Strengths
+What did they do particularly well?
+
+### Areas for Improvement
+Constructive feedback on weaknesses.
+
+### Missing Edge Cases
+Specific edge cases they didn't consider.
+
+### Recommended Next Steps
+Actionable advice for interview preparation.
+
+**Important Guidelines:**
+- If code is empty/minimal, score low but still provide all sections
+- If transcript is empty, note lack of verbal communication in Communication score
+- Be constructive but honest
+- Reference specific lines of code or conversation when possible
+- Provide actionable feedback`;
 
   const userMessage = `
-**Candidate Code:**
+**Candidate's Final Code:**
 \`\`\`javascript
-${code}
+${code || '// No code submitted'}
 \`\`\`
 
-**Transcript:**
-${transcript.map(t => `${t.role.toUpperCase()}: ${t.content}`).join('\n')}
-`;
+**Interview Transcript:**
+${transcript && transcript.length > 0
+      ? transcript.map(t => `${t.role === 'ai' ? 'INTERVIEWER' : 'CANDIDATE'}: ${t.content}`).join('\n')
+      : '(No transcript available - candidate may not have spoken or feature was not enabled)'}
+
+**Your Evaluation:**`;
 
   try {
     const chatCompletion = await groq.chat.completions.create({
@@ -80,21 +162,36 @@ ${transcript.map(t => `${t.role.toUpperCase()}: ${t.content}`).join('\n')}
         { role: 'user', content: userMessage }
       ],
       model: 'llama-3.3-70b-versatile',
-      temperature: 0.1, // Low temperature for consistent evaluation
+      temperature: 0.2, // Slightly higher for nuanced feedback
       response_format: { type: 'json_object' }
     });
 
     const content = chatCompletion.choices[0]?.message?.content;
     if (!content) throw new Error("Received empty response from LLM");
 
-    return JSON.parse(content) as EvaluationResult;
+    const result = JSON.parse(content) as EvaluationResult;
+
+    // Validate structure
+    if (!result.dimension_scores) {
+      throw new Error("Invalid response structure - missing dimension_scores");
+    }
+
+    return result;
 
   } catch (error) {
     console.error("Evaluation failed:", error);
     return {
-      score: 0,
+      overall_score: 0,
       correctness: false,
-      feedback_markdown: "## Evaluation Failed\n\nAn error occurred while generating the report. Please try again later."
+      dimension_scores: {
+        problem_solving: 0,
+        algorithmic_thinking: 0,
+        code_implementation: 0,
+        testing: 0,
+        time_management: 0,
+        communication: 0
+      },
+      feedback_markdown: "## Evaluation Failed\n\nAn error occurred while generating the report. Please try again later.\n\n**Error Details:**\n" + (error instanceof Error ? error.message : String(error))
     };
   }
 }

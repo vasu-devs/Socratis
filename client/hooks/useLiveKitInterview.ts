@@ -35,7 +35,20 @@ export function useLiveKitInterview({ sessionId, participantName, onCallEnd }: U
             await newRoom.connect(url, token, {
                 autoSubscribe: true,
                 rtcConfig: {
-                    iceTransportPolicy: 'relay',
+                    iceTransportPolicy: 'all', // Allow both direct and relayed connections
+                    iceServers: [
+                        // Google public STUN servers for NAT traversal
+                        {
+                            urls: 'stun:stun.l.google.com:19302',
+                        },
+                        {
+                            urls: 'stun:stun1.l.google.com:19302',
+                        },
+                        // Additional fallback STUN servers
+                        {
+                            urls: 'stun:stun2.l.google.com:19302',
+                        },
+                    ],
                 }
             });
 

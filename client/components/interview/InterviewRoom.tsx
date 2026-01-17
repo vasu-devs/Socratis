@@ -72,7 +72,7 @@ const ActiveInterviewSession = ({
         };
     }, [remoteParticipants, room]);
 
-    // Handle Data (Transcript)
+    // Handle Data (Transcript) - LEGACY fallback for manual data channel messages
     useEffect(() => {
         const handleData = (payload: Uint8Array, participant?: RemoteParticipant) => {
             try {

@@ -18,8 +18,18 @@ export interface ISession extends Document {
   }>;
   feedback?: {
     correctness: boolean;
-    score: number;
+    overall_score: number;
+    dimension_scores?: {
+      problem_solving: number;
+      algorithmic_thinking: number;
+      code_implementation: number;
+      testing: number;
+      time_management: number;
+      communication: number;
+    };
     feedback_markdown: string;
+    // Legacy field for backwards compatibility
+    score?: number;
   };
   createdAt: Date;
 }
@@ -42,8 +52,17 @@ const SessionSchema: Schema = new Schema({
   }],
   feedback: {
     correctness: { type: Boolean },
-    score: { type: Number },
+    overall_score: { type: Number },
+    dimension_scores: {
+      problem_solving: { type: Number },
+      algorithmic_thinking: { type: Number },
+      code_implementation: { type: Number },
+      testing: { type: Number },
+      time_management: { type: Number },
+      communication: { type: Number }
+    },
     feedback_markdown: { type: String },
+    score: { type: Number }, // Legacy field
   },
   createdAt: { type: Date, default: Date.now },
 });
