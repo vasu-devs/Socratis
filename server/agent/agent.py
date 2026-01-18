@@ -62,13 +62,10 @@ async def entrypoint(ctx: JobContext):
         )
         logger.info("[STEP 3] - Groq LLM initialized successfully")
         
-        logger.info("[STEP 3] - Initializing Groq STT (model: whisper-large-v3)...")
-        groq_stt = openai.STT(
-            base_url="https://api.groq.com/openai/v1",
-            api_key=os.environ.get("GROQ_API_KEY"),
-            model="whisper-large-v3"
-        )
-        logger.info("[STEP 3] - Groq STT initialized successfully")
+        # USING DEEPGRAM STT for real-time streaming (Groq Whisper doesn't support streaming)
+        logger.info("[STEP 3] - Initializing Deepgram STT for real-time transcription...")
+        deepgram_stt = deepgram.STT()
+        logger.info("[STEP 3] - Deepgram STT initialized successfully")
         logger.info("[STEP 3] All plugins initialized - NO ERRORS")
         
     except Exception as e:
@@ -183,11 +180,11 @@ Make your progression decision based on overall performance, not just whether th
     try:
         session = AgentSession(
             vad=ctx.proc.userdata["vad"],
-            stt=groq_stt,
+            stt=deepgram_stt,
             llm=groq_llm,
             tts=deepgram_tts,
         )
-        logger.info("[STEP 5] AgentSession created (VAD + STT + LLM + TTS wired)")
+        logger.info("[STEP 5] AgentSession created (VAD + Deepgram STT + Groq LLM + Deepgram TTS)")
         
     except Exception as e:
         logger.error(f"[STEP 5] FAILED: AgentSession creation error: {e}")
