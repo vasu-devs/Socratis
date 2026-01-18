@@ -235,6 +235,11 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
     const [token, setToken] = useState<string>("");
     const [wsUrl, setWsUrl] = useState<string>("");
 
+    // Multi-question state
+    const [totalQuestions, setTotalQuestions] = useState<number>(1);
+    const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
+    const [isSubmittingQuestion, setIsSubmittingQuestion] = useState(false);
+
     // Transcript state - lifted to parent for submission
     const [transcript, setTranscript] = useState<Array<{ role: 'ai' | 'user', content: string }>>([]);
 
@@ -252,15 +257,21 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
                         const data = await res.json();
                         setQuestion(data.question);
                         setCode(data.code || data.question.starterCode);
+                        setTotalQuestions(data.questions?.length || 1);
+                        setCurrentQuestionIndex(data.currentQuestionIndex || 0);
                         return;
                     }
                 }
                 const res = await fetch('http://localhost:4000/api/start', { method: 'POST' });
                 if (res.ok) {
                     const data = await res.json();
+                    console.log("[Debug] /api/start response:", data);
+                    console.log("[Debug] totalQuestions:", data.totalQuestions, "currentQuestionIndex:", data.currentQuestionIndex);
                     setQuestion(data.question);
                     setCode(data.question.starterCode);
                     setCurrentSessionId(data.sessionId);
+                    setTotalQuestions(data.totalQuestions || 1);
+                    setCurrentQuestionIndex(data.currentQuestionIndex || 0);
                     if (initialSessionId === 'new') {
                         window.history.replaceState(null, '', `/interview/${data.sessionId}`);
                     }
@@ -320,7 +331,7 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
                 body: JSON.stringify({
                     sessionId: currentSessionId,
                     code: code,
-                    transcript: transcript // Now passes actual transcript from state
+                    transcript: transcript
                 })
             });
 
@@ -332,9 +343,46 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
         } catch (error) {
             console.error("Error submitting interview:", error);
         } finally {
-            // Always navigate to results, even if submission fails
             setToken("");
             router.push(`/interview/${currentSessionId}/result`);
+        }
+    };
+
+    // Handler for submitting current question and advancing to next
+    const handleNextQuestion = async () => {
+        if (isSubmittingQuestion) return;
+        setIsSubmittingQuestion(true);
+
+        try {
+            const response = await fetch('http://localhost:4000/api/submit-question', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sessionId: currentSessionId,
+                    code: code,
+                    transcript: transcript
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+
+                if (data.status === 'next_question') {
+                    // Update to next question
+                    setQuestion(data.question);
+                    setCode(data.question.starterCode);
+                    setCurrentQuestionIndex(data.currentQuestionIndex);
+                    setTranscript([]); // Reset transcript for new question
+                    console.log(`Advanced to question ${data.currentQuestionIndex + 1}/${data.totalQuestions}`);
+                } else if (data.status === 'completed') {
+                    // All questions done, go to results
+                    router.push(`/interview/${currentSessionId}/result`);
+                }
+            }
+        } catch (error) {
+            console.error("Error advancing question:", error);
+        } finally {
+            setIsSubmittingQuestion(false);
         }
     };
 
@@ -379,19 +427,45 @@ export default function InterviewRoom({ sessionId: initialSessionId }: Interview
                     </Link>
                     <div className="h-4 w-[1px] bg-slate-100" />
                     <h2 className="font-bold text-slate-900">{question.title}</h2>
+                    {/* Question Progress Indicator */}
+                    {totalQuestions > 1 && (
+                        <div className="px-3 py-1 bg-blue-50 border border-blue-100 rounded-lg">
+                            <span className="text-[12px] font-bold text-blue-600">
+                                Question {currentQuestionIndex + 1}/{totalQuestions}
+                            </span>
+                        </div>
+                    )}
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                     <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 border border-slate-100 rounded-lg">
                         <Sparkles size={14} className="text-blue-500" />
                         <span className="text-[12px] font-bold text-slate-500 uppercase tracking-wider">Llama 3.3 Active</span>
                     </div>
+                    {/* Next Question Button - shows when not on last question */}
+                    {currentQuestionIndex + 1 < totalQuestions && (
+                        <button
+                            onClick={handleNextQuestion}
+                            disabled={isSubmittingQuestion}
+                            className="bg-blue-600 text-white px-5 py-2.5 rounded-full text-sm font-bold hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-500/20 flex items-center gap-2 disabled:opacity-50"
+                        >
+                            {isSubmittingQuestion ? (
+                                <>
+                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    Submitting...
+                                </>
+                            ) : (
+                                <>Next Question →</>
+                            )}
+                        </button>
+                    )}
+                    {/* Final Submit Button */}
                     <button
                         onClick={handleEndCall}
                         className="bg-emerald-600 text-white px-6 py-2.5 rounded-full text-sm font-bold hover:bg-emerald-700 transition-all active:scale-95 shadow-lg shadow-emerald-500/25 flex items-center gap-2"
                         title="Click to submit or press Ctrl+Enter"
                     >
                         <CheckCircle2 size={16} />
-                        Submit & Get Report
+                        {currentQuestionIndex + 1 >= totalQuestions ? 'Submit & Get Report' : 'Finish Early'}
                     </button>
                 </div>
             </header>

@@ -139,20 +139,29 @@ router.post('/livekit/token', async (req: Request, res: Response) => {
 // POST /start
 router.post('/start', async (req: Request, res: Response) => {
   try {
-    // FORCE "Two Sum" (Index 0) as per user request to remove randomness
-    const question = QUESTIONS[0];
+    // Default: Start with 1 question, agent decides if more are needed based on performance
+    // All questions are loaded but only first is shown initially
+    const allQuestions = QUESTIONS.slice(0, 2); // Prepare pool of 2 possible questions
+    const numQuestionsToShow = 1; // Start with just 1 question
 
     // DEBUG MODE: Fixed Session ID to match Agent Room
     const sessionId = "socratis-interview"; // uuidv4();
 
+    const firstQuestion = allQuestions[0];
+
     const sessionData = {
       sessionId,
+      questions: allQuestions, // Store all possible questions
+      currentQuestionIndex: 0,
+      submissions: [],
       question: {
-        title: question.title,
-        description: question.description,
-        examples: question.examples,
-        starterCode: question.starterCode
+        title: firstQuestion.title,
+        description: firstQuestion.description,
+        examples: firstQuestion.examples,
+        starterCode: firstQuestion.starterCode
       },
+      code: firstQuestion.starterCode,
+      transcript: [],
       status: 'active'
     };
 
@@ -162,19 +171,142 @@ router.post('/start', async (req: Request, res: Response) => {
       { new: true, upsert: true }
     );
 
-    // Cache in memory (expires in 1 hour handling not strictly needed for Map but could clear on interval if needed)
+    // Cache in memory
     sessionCache.set(sessionId, sessionData);
-    console.log(`[Cache] Session ${sessionId} cached.`);
+    console.log(`[Cache] Session ${sessionId} cached. Agent will decide if second question is needed.`);
 
-    res.json({
+    const response = {
       sessionId,
-      question: session.question
-    });
+      question: session.question,
+      totalQuestions: numQuestionsToShow, // Show 1, agent can add more
+      currentQuestionIndex: 0
+    };
+    console.log(`[API /start] Sending response:`, JSON.stringify(response, null, 2));
+
+    res.json(response);
   } catch (error) {
     console.error('Error starting session:', error);
     res.status(500).json({ error: 'Failed to start session' });
   }
 });
+
+// POST /submit-question - Submit current question and advance to next
+router.post('/submit-question', async (req: Request, res: Response) => {
+  const { sessionId, code, transcript = [] } = req.body;
+
+  try {
+    const session = await Session.findOne({ sessionId });
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const currentIndex = session.currentQuestionIndex;
+    const totalQuestions = session.questions.length;
+
+    // Save current submission
+    session.submissions.push({
+      questionIndex: currentIndex,
+      code: code,
+      transcript: transcript,
+      submittedAt: new Date()
+    });
+
+    // Check if there are more questions
+    if (currentIndex + 1 < totalQuestions) {
+      // Advance to next question
+      const nextQuestion = session.questions[currentIndex + 1];
+      session.currentQuestionIndex = currentIndex + 1;
+      session.question = nextQuestion;
+      session.code = nextQuestion.starterCode;
+      session.transcript = []; // Reset transcript for new question
+
+      await session.save();
+      sessionCache.set(sessionId, session.toObject());
+
+      console.log(`[Session] Advanced to question ${currentIndex + 2}/${totalQuestions}`);
+
+      res.json({
+        status: 'next_question',
+        question: nextQuestion,
+        currentQuestionIndex: currentIndex + 1,
+        totalQuestions: totalQuestions,
+        message: `Moving to question ${currentIndex + 2} of ${totalQuestions}`
+      });
+    } else {
+      // All questions completed - trigger final evaluation
+      session.code = code;
+      session.transcript = transcript;
+      session.status = 'completed';
+
+      console.log("Evaluating full session...");
+      const evaluation = await evaluateSession(
+        session.question,
+        code,
+        transcript
+      );
+
+      session.feedback = evaluation;
+      await session.save();
+      sessionCache.set(sessionId, session.toObject());
+
+      res.json({
+        status: 'completed',
+        feedback: session.feedback,
+        message: 'Interview completed! All questions submitted.'
+      });
+    }
+  } catch (error) {
+    console.error('Error submitting question:', error);
+    res.status(500).json({ error: 'Failed to submit question' });
+  }
+});
+
+// POST /advance-question - Agent calls this when it decides candidate needs a second question
+// This is different from submit-question as it doesn't save code, just advances the question
+router.post('/advance-question', async (req: Request, res: Response) => {
+  const { sessionId } = req.body;
+
+  try {
+    const session = await Session.findOne({ sessionId });
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const currentIndex = session.currentQuestionIndex;
+    const totalQuestions = session.questions.length;
+
+    // Check if there are more questions available
+    if (currentIndex + 1 < totalQuestions) {
+      const nextQuestion = session.questions[currentIndex + 1];
+      session.currentQuestionIndex = currentIndex + 1;
+      session.question = nextQuestion;
+      session.code = nextQuestion.starterCode;
+      // Don't reset transcript - keep conversation flowing
+
+      await session.save();
+      sessionCache.set(sessionId, session.toObject());
+
+      console.log(`[Agent Decision] Advanced to question ${currentIndex + 2}/${totalQuestions}`);
+
+      res.json({
+        status: 'advanced',
+        question: nextQuestion,
+        currentQuestionIndex: currentIndex + 1,
+        totalQuestions: totalQuestions,
+        message: `Agent advanced to question ${currentIndex + 2}`
+      });
+    } else {
+      res.json({
+        status: 'no_more_questions',
+        message: 'No more questions available'
+      });
+    }
+  } catch (error) {
+    console.error('Error advancing question:', error);
+    res.status(500).json({ error: 'Failed to advance question' });
+  }
+});
+
 
 // POST /submit
 router.post('/submit', async (req: Request, res: Response) => {
@@ -221,7 +353,13 @@ router.get('/session/:sessionId', async (req: Request, res: Response) => {
     const cachedSession = sessionCache.get(sessionId);
     if (cachedSession) {
       console.log(`[Cache] Serving session ${sessionId} from memory`);
-      return res.json(cachedSession);
+      // Ensure multi-question fields are included
+      const response = {
+        ...cachedSession,
+        totalQuestions: cachedSession.questions?.length || 1,
+        currentQuestionIndex: cachedSession.currentQuestionIndex || 0
+      };
+      return res.json(response);
     }
 
     const session = await Session.findOne({ sessionId });
@@ -230,9 +368,15 @@ router.get('/session/:sessionId', async (req: Request, res: Response) => {
     }
 
     // Cache it for future lookups
-    sessionCache.set(sessionId, session.toObject());
+    const sessionObj = session.toObject();
+    sessionCache.set(sessionId, sessionObj);
 
-    res.json(session);
+    // Include multi-question fields in response
+    res.json({
+      ...sessionObj,
+      totalQuestions: session.questions?.length || 1,
+      currentQuestionIndex: session.currentQuestionIndex || 0
+    });
   } catch (error) {
     console.error('Error fetching session:', error);
     res.status(500).json({ error: 'Failed to fetch session' });

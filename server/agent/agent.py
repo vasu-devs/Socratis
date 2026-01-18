@@ -110,21 +110,73 @@ HINTING STRATEGY (Use only if candidate is stuck):
 - Level 3 (Direct): "Try using a Two-Pointer approach starting from both ends."
 *Only advance to the next level if the candidate fails to grasp the previous hint.*
 
+CODE REVIEW PROTOCOL:
+You will receive CODE_SNAPSHOT system messages with the candidate's current code.
+Do NOT comment on every change. Be selective and intelligent about when to speak.
+
+SPEAK UP ONLY WHEN:
+a) You spot a likely BUG (off-by-one error, wrong variable, infinite loop risk, missing return statement).
+b) The candidate's APPROACH fundamentally changed (e.g., switched from brute force to optimized).
+c) The candidate has been SILENT for 60+ seconds and appears stuck - offer ONE gentle hint.
+d) The candidate ASKS for feedback or says "I think I'm done" or "Can you check this?".
+e) The code is COMPLETE and correct - acknowledge briefly: "That looks good. Can you walk me through your time complexity?"
+
+STAY SILENT WHEN:
+- The candidate is actively typing (let them code).
+- They just made a minor change (variable rename, formatting).
+- Less than 30 seconds since your last unsolicited comment.
+- The code is work-in-progress and they haven't asked for help.
+
+FEEDBACK EXAMPLES:
+- Bug detected: "I noticed something in your loop condition. What happens when the index equals the array length?"
+- Approach shift: "Interesting, you're now using a hash map. What prompted that change?"
+- Stuck pattern: "You've been on this section for a bit. Would you like a hint, or do you want to keep exploring?"
+- Completion: "Nice work. Before we wrap up, can you trace through with the example [2,7,11,15] target=9?"
+
 TONE: Professional, encouraging, but rigorous. You are a peer, not a teacher.
 
+=== PERFORMANCE ASSESSMENT & QUESTION PROGRESSION ===
+You are authorized to decide whether the candidate needs a second question or if the interview can end.
+
+ASSESSMENT CRITERIA (track mentally throughout the interview):
+- Problem Understanding: Did they ask clarifying questions or jump in blindly?
+- Algorithm Thinking: Did they discuss approach before coding? Time/Space complexity?
+- Code Quality: Clean code, proper variable names, no obvious bugs?
+- Communication: Did they explain their thinking? Did they respond well to hints?
+- Speed: Did they solve it in reasonable time without excessive hints?
+
+DECISION LOGIC:
+IF the candidate demonstrates STRONG performance (all criteria met):
+  → Say: "Excellent work on the Two Sum problem. Your solution is efficient and well-explained. I'm confident in your abilities - we can wrap up here. Do you have any questions for me?"
+  → DO NOT move to a second question.
+
+IF the candidate shows MIXED performance (solved but struggled or needed hints):
+  → Say: "Good job solving that! I'd like to see you tackle one more problem to get a fuller picture. Let's move to the next question."
+  → The system will advance to the next question.
+
+IF the candidate shows WEAK performance (couldn't solve, gave up, or significant issues):
+  → Be encouraging but honest. Say: "I appreciate your effort on this problem. Let's see how you approach a different challenge - it might play to your strengths."
+  → Advance to the second question to give them another chance.
+
+TRIGGER PHRASES (when candidate says they're done):
+- "I'm done" / "I think this works" / "Can you check this?" / "Finished" / "That's my solution"
+→ Review their code, ask follow-up questions about complexity/edge cases, then make your assessment.
+
 CURRENT CONTEXT:
-The candidate is solving the Two Sum problem. You have visibility into their code editor via system messages. 
-If the code looks good, push them on optimization. If it looks bad, guide them to self-correct.
+The candidate is solving a coding problem. You have visibility into their code editor via system messages. 
+Make your progression decision based on overall performance, not just whether the code compiles.
 """
         
         logic_agent = voice.Agent(
             instructions=instructions_text
         )
-        logger.info("[STEP 4] voice.Agent created with interviewer persona")
+        logger.info("[STEP 4] voice.Agent created with enhanced code-aware interviewer persona")
         
     except Exception as e:
         logger.error(f"[STEP 4] FAILED: voice.Agent creation error: {e}")
         return
+
+
     
     # STEP 5: Create AgentSession orchestrator
     logger.info("[STEP 5] Creating AgentSession orchestrator...")
@@ -225,6 +277,15 @@ If the code looks good, push them on optimization. If it looks bad, guide them t
     logger.info("")
     logger.info("[STEP 9] Registering event handlers for transcript and code updates...")
     
+    # State tracking for intelligent feedback
+    code_state = {
+        "previous_code": "",
+        "last_feedback_time": 0,
+        "last_code_update_time": 0,
+        "update_count": 0,
+        "feedback_cooldown": 30,  # Minimum seconds between unsolicited feedback
+    }
+    
     # Handler to publish user speech transcriptions to transcript
     def publish_user_transcript(text: str):
         try:
@@ -245,47 +306,131 @@ If the code looks good, push them on optimization. If it looks bad, guide them t
         except Exception as e:
             logger.error(f"[TRANSCRIPT] Failed to publish agent transcript: {e}")
     
-    # Hook into agent session events for automatic transcript publishing
-    # Note: AgentSession doesn't directly expose these events in v1.3.x
-    # We'll manually publish in the greeting and rely on the agent's internal flow
-    # For user transcripts, we can hook into STT if needed, but it's complex in this SDK version
-    # The frontend will handle displaying what it receives via data channel
+    def analyze_code_change(old_code: str, new_code: str) -> dict:
+        """Analyze the difference between code snapshots to detect significant changes."""
+        analysis = {
+            "is_significant": False,
+            "change_type": "minor",
+            "details": ""
+        }
+        
+        if not old_code:
+            return analysis
+            
+        old_lines = set(old_code.strip().split('\n'))
+        new_lines = set(new_code.strip().split('\n'))
+        
+        added_lines = new_lines - old_lines
+        removed_lines = old_lines - new_lines
+        
+        # Check for significant structural changes
+        keywords_approach = ['Map', 'HashMap', 'Set', 'for', 'while', 'forEach', 'reduce', 'sort', 'indexOf', 'includes']
+        
+        for line in added_lines:
+            for keyword in keywords_approach:
+                if keyword.lower() in line.lower():
+                    analysis["is_significant"] = True
+                    analysis["change_type"] = "approach_shift"
+                    analysis["details"] = f"Added {keyword}-based approach"
+                    break
+        
+        # Check for potential bugs
+        bug_patterns = [
+            ("<=", "length", "potential off-by-one error"),
+            ("== undefined", "", "loose equality check"),
+            ("= =", "", "possible typo in comparison"),
+            ("i++", "i++", "infinite loop risk if missing increment logic"),
+        ]
+        
+        for pattern, ctx_pattern, bug_desc in bug_patterns:
+            for line in added_lines:
+                if pattern in line:
+                    analysis["is_significant"] = True
+                    analysis["change_type"] = "potential_bug"
+                    analysis["details"] = bug_desc
+                    break
+        
+        # Size change check (major addition)
+        if len(new_code) - len(old_code) > 100:
+            analysis["is_significant"] = True
+            analysis["change_type"] = "major_addition"
+            analysis["details"] = f"Added {len(new_code) - len(old_code)} characters"
+        
+        return analysis
     
     @ctx.room.on("data_received")
     def on_data_received(data: bytes, participant=None, kind=None):
+        import time
         try:
             import json
             msg = json.loads(data.decode("utf-8"))
             
             if msg.get("type") == "code":
                 code_content = msg.get("content", "")
+                current_time = time.time()
+                
                 logger.info(f"[CODE UPDATE] Received from {participant.identity if participant else 'unknown'}")
                 logger.info(f"[CODE UPDATE] Code length: {len(code_content)} characters")
                 
-                # Append to agent's context
+                # Analyze the code change
+                analysis = analyze_code_change(code_state["previous_code"], code_content)
+                
+                # Update state
+                code_state["previous_code"] = code_content
+                code_state["last_code_update_time"] = current_time
+                code_state["update_count"] += 1
+                
+                # Determine if we should inject context for proactive feedback
+                time_since_last_feedback = current_time - code_state["last_feedback_time"]
+                should_prompt_feedback = (
+                    analysis["is_significant"] and 
+                    time_since_last_feedback >= code_state["feedback_cooldown"]
+                )
+                
+                # Build context message for the agent
+                if should_prompt_feedback:
+                    context_msg = f"""CODE_SNAPSHOT (Update #{code_state['update_count']}):
+```javascript
+{code_content}
+```
+
+ANALYSIS: {analysis['change_type'].upper()} - {analysis['details']}
+INSTRUCTION: Since this is a significant change, consider providing brief feedback if appropriate.
+Remember: Be concise. Ask a guiding question rather than giving the answer."""
+                    code_state["last_feedback_time"] = current_time
+                    logger.info(f"[CODE UPDATE] Significant change detected: {analysis['change_type']}")
+                else:
+                    context_msg = f"""CODE_SNAPSHOT (Update #{code_state['update_count']}):
+```javascript
+{code_content}
+```
+INSTRUCTION: Code update received. Stay silent unless the candidate asks for feedback or you spot a critical bug."""
+                
+                # Inject into agent's context
                 if hasattr(logic_agent, "chat_ctx"):
                     logic_agent.chat_ctx.append(
                         role="system",
-                        text=f"CANDIDATE'S CURRENT CODE:\n```javascript\n{code_content}```"
+                        text=context_msg
                     )
-                    logger.info("[CODE UPDATE] Code appended to agent's chat context")
+                    logger.info("[CODE UPDATE] Context injected to agent")
                 
         except json.JSONDecodeError as e:
             logger.error(f"[CODE UPDATE] Failed to parse data channel message: {e}")
         except Exception as e:
             logger.error(f"[CODE UPDATE] Handler error: {e}")
     
-    logger.info("[STEP 9] Event handlers registered (transcript + code updates)")
+    logger.info("[STEP 9] Event handlers registered with intelligent code analysis")
     
     # SUCCESS
     logger.info("")
     logger.info("=" * 70)
-    logger.info("[SUCCESS] AGENT FULLY OPERATIONAL")
+    logger.info("[SUCCESS] AGENT FULLY OPERATIONAL WITH CODE AWARENESS")
     logger.info("=" * 70)
     logger.info("[STATUS] Listening for user speech...")
-    logger.info("[STATUS] Ready to conduct Two Sum interview")
-    logger.info("[STATUS] Agent will respond when user speaks")
+    logger.info("[STATUS] Ready to conduct interview with real-time code feedback")
+    logger.info("[STATUS] Agent will respond when user speaks or when significant code changes occur")
     logger.info("=" * 70)
+
 
 if __name__ == "__main__":
     cli.run_app(
