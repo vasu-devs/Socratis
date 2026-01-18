@@ -156,7 +156,7 @@ Press `Ctrl+C` to stop all services.
 
 ### 4. Open the App
 
-Navigate to **http://localhost:3000/interview/new** and start your interview!
+Navigate to **http://localhost:3000** to access the dashboard and start your interview!
 
 ---
 

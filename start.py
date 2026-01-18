@@ -27,21 +27,28 @@ def cleanup(signum=None, frame=None):
             proc.terminate()
             proc.wait(timeout=5)
         except:
-            proc.kill()
+            try:
+                proc.kill()
+            except:
+                pass
     print("✅ All services stopped.")
     sys.exit(0)
 
-def start_service(name, cmd, cwd, shell=True):
+def start_service(name, cmd, cwd):
     """Start a service in a new process"""
     print(f"🚀 Starting {name}...")
-    proc = subprocess.Popen(
-        cmd,
-        cwd=cwd,
-        shell=shell,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
-    )
+    
+    # Use CREATE_NEW_CONSOLE on Windows to keep processes running
+    if os.name == 'nt':
+        proc = subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            shell=True,
+            creationflags=subprocess.CREATE_NEW_CONSOLE
+        )
+    else:
+        proc = subprocess.Popen(cmd, cwd=cwd, shell=True)
+    
     processes.append(proc)
     return proc
 
