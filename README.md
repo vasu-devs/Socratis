@@ -1,147 +1,333 @@
-# Socratis - AI-Powered Interview Practice Platform
+# 🎙️ Socratis - AI-Powered Technical Interview Platform
 
-Socratis is a high-fidelity coding interview simulation platform. It pairs a voice-based AI interviewer with a professional code editor to provide a collaborative, real-world interview experience.
+<div align="center">
 
-## 🏗 System Architecture
+![Socratis](https://img.shields.io/badge/Socratis-AI%20Interviewer-blue?style=for-the-badge)
+![LiveKit](https://img.shields.io/badge/LiveKit-Real--time%20Voice-green?style=for-the-badge)
+![Next.js](https://img.shields.io/badge/Next.js%2014-Frontend-black?style=for-the-badge)
+![TypeScript](https://img.shields.io/badge/TypeScript-Backend-blue?style=for-the-badge)
 
-The project is a **Local-First Monorepo** using Next.js for the frontend and Express.js for the backend.
+**A real-time AI interviewer that conducts live coding interviews with voice interaction, intelligent feedback, and performance-based assessment.**
 
-### 1. High-Level Data Flow
-1.  **User Initiates Session**: Frontend requests a new session from Backend.
-2.  **Session Creation**: Backend generates a unique `sessionId`, selects a random problem, and initializes a document in MongoDB and a cache entry in Redis.
-3.  **Context Injection**: Frontend receives the problem details. When the user starts the Voice AI, these details (description, constraints) are injected into the Vapi instance.
-4.  **Real-time Interaction**:
-    *   **Voice**: Direct WebRTC connection between Client and Vapi.ai Servers.
-    *   **Code**: State managed locally in Monaco Editor.
-5.  **Submission**: Code and transcript are sent to Backend, stored in MongoDB, cached in Redis, and evaluated by Groq LLM (Llama 3.3).
+[Features](#-features) • [Architecture](#-architecture) • [Quick Start](#-quick-start) • [API Reference](#-api-reference)
+
+</div>
 
 ---
 
-## 🛠 Tech Stack Details
+## ✨ Features
 
-### Backend (`server/`)
-*   **Runtime**: Node.js with TypeScript.
-*   **Framework**: Express.js.
-*   **Database**: MongoDB (via Mongoose) for persistent storage.
-*   **Cache**: Redis (via ioredis) for session performance.
-*   **LLM**: Groq (Llama 3.3 Versatile) for high-speed technical evaluation.
+### 🎯 Core Capabilities
+- **Real-time Voice Interview**: Natural conversation with AI interviewer using WebRTC
+- **Live Code Editor**: Monaco Editor with syntax highlighting and real-time code snapshots
+- **Intelligent Feedback**: AI provides contextual hints without giving away solutions
+- **Performance Assessment**: Agent evaluates and decides interview progression
 
-### Frontend (`client/`)
-*   **Framework**: Next.js 14 (App Router).
-*   **Styling**: Tailwind CSS + ShadCN UI.
-*   **Components**: Monaco Editor, Unified Layout Sidebar.
-*   **Voice**: LiveKit Client SDK for real-time voice interaction with AI agent.
+### 🧠 AI-Powered Intelligence (V2)
+- **Live Code Awareness**: Agent receives code snapshots every 2 seconds
+- **Selective Feedback**: Only speaks when detecting bugs, approach changes, or when candidate is stuck
+- **Agent-Driven Flow**: Agent decides whether to proceed to additional questions based on performance
+- **Socratic Method**: Guides candidates through hints rather than giving answers
 
-### AI Agent (`server/agent/`)
-*   **Framework**: LiveKit Agents (Python)
-*   **LLM**: Groq (Llama 3.3 70B Speculative Decoding)
-*   **Speech-to-Text**: Deepgram
-*   **Text-to-Speech**: Deepgram
-*   **VAD**: Silero Voice Activity Detection
+### 📊 Evaluation & Reports
+- **Multi-dimensional Analysis**: Logic, Algorithm, Code Quality, Speed, Voice Communication
+- **Detailed Feedback**: Strengths, growth areas, and actionable next steps
+- **Visual Score Radar**: Professional result page with dimensional mapping
 
 ---
 
-## 🚀 Running the Project
+## 🏗 Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              SOCRATIS PLATFORM                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────┐     WebSocket      ┌──────────────┐                       │
+│  │   Frontend   │◄──────────────────►│   Backend    │                       │
+│  │  (Next.js)   │    REST API        │  (Express)   │                       │
+│  │  Port 3000   │                    │  Port 4000   │                       │
+│  └──────┬───────┘                    └──────┬───────┘                       │
+│         │                                   │                                │
+│         │ WebRTC                            │ MongoDB                        │
+│         │ (Voice)                           ▼                                │
+│         │                            ┌──────────────┐                       │
+│         ▼                            │   Database   │                       │
+│  ┌──────────────┐                    │   MongoDB    │                       │
+│  │   LiveKit    │                    └──────────────┘                       │
+│  │    Cloud     │                                                           │
+│  └──────┬───────┘                                                           │
+│         │                                                                    │
+│         │ LiveKit Protocol                                                   │
+│         ▼                                                                    │
+│  ┌──────────────────────────────────────────────────────────────┐          │
+│  │                    PYTHON VOICE AGENT                         │          │
+│  ├──────────────────────────────────────────────────────────────┤          │
+│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────────────┐ │          │
+│  │  │  VAD    │  │   STT   │  │   LLM   │  │      TTS        │ │          │
+│  │  │ Silero  │  │Deepgram │  │  Groq   │  │    Deepgram     │ │          │
+│  │  └─────────┘  └─────────┘  │Llama3.1 │  │  aura-helios    │ │          │
+│  │                            └─────────┘  └─────────────────┘ │          │
+│  └──────────────────────────────────────────────────────────────┘          │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Component Breakdown
+
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| **Frontend** | Next.js 14, React, TailwindCSS | Interview UI, Code Editor, Voice Controls |
+| **Backend** | Express.js, TypeScript, MongoDB | Session Management, Evaluation API |
+| **Voice Agent** | Python, LiveKit Agents SDK | Real-time voice conversation |
+| **STT** | Deepgram | Real-time speech-to-text |
+| **TTS** | Deepgram (aura-helios-en) | Natural voice synthesis |
+| **LLM** | Groq (Llama 3.1 8B Instant) | Fast inference for interviewer logic |
+| **VAD** | Silero | Voice activity detection |
+
+---
+
+## 🚀 Quick Start
 
 ### Prerequisites
-1. **Python 3.8+** installed and available in PATH
-2. **MongoDB** running on `localhost:27017`
-3. **Redis** running on `localhost:6379`
-4. **API Keys** configured in `.env` file (see below)
 
-### 1. Environment Setup
-Copy `.env.example` to `.env` and fill in your API keys:
+- **Node.js** 18+ 
+- **Python** 3.8+
+- **MongoDB** running locally or connection string
+- **API Keys**: LiveKit, Groq, Deepgram
+
+### 1. Clone & Install
+
 ```bash
-cp .env.example .env
+# Clone the repository
+git clone https://github.com/your-username/socratis.git
+cd socratis
+
+# Install backend dependencies
+cd server && npm install
+
+# Install frontend dependencies
+cd ../client && npm install
+
+# Install Python agent dependencies
+cd ../server/agent && pip install -r requirements.txt
 ```
 
-Required API keys:
-- **LiveKit**: Get from [cloud.livekit.io](https://cloud.livekit.io/) (see `livekit.md` for detailed instructions)
-- **Groq**: Get from [console.groq.com](https://console.groq.com/)
-- **Deepgram**: Get from [console.deepgram.com](https://console.deepgram.com/)
+### 2. Configure Environment
 
-### 2. Install Dependencies
-
-**Python Agent**:
-```bash
-cd server/agent
-pip install -r requirements.txt
-```
-
-**Backend**:
-```bash
-cd server
-npm install
-```
-
-**Frontend**:
-```bash
-cd client
-npm install
-```
-
-### 3. Start Services (in order)
-
-**Terminal 1 - LiveKit Agent**:
-```bash
-# Option A: Use the startup script (Windows)
-start-agent.bat
-
-# Option B: Manual start
-cd server/agent
-python agent.py dev
-```
-
-**Terminal 2 - Backend Server**:
-```bash
-cd server
-npm run dev
-```
-(Runs on port 4000)
-
-**Terminal 3 - Frontend**:
-```bash
-cd client
-npm run dev
-```
-(Runs on port 3000)
-
-### 4. Access the Application
-Navigate to `http://localhost:3000` and start your interview!
-
-
-
-## 🔑 Environment Variables
-
-### Root `.env`
+**Server `.env`** (`server/.env`):
 ```env
-# LiveKit Configuration
+MONGODB_URI=mongodb://localhost:27017/socratis
+GROQ_API_KEY=your_groq_api_key
 LIVEKIT_API_KEY=your_livekit_api_key
 LIVEKIT_API_SECRET=your_livekit_api_secret
 LIVEKIT_URL=wss://your-project.livekit.cloud
-
-# AI Services
-GROQ_API_KEY=your_groq_key
-DEEPGRAM_API_KEY=your_deepgram_key
-
-# Database
-MONGODB_URI=mongodb://localhost:27017/socratis
-REDIS_URL=redis://localhost:6379
-
-# Server
-PORT=4000
 ```
 
-See `.env.example` for a complete template.
+**Agent `.env`** (`server/agent/.env`):
+```env
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=your_livekit_api_key
+LIVEKIT_API_SECRET=your_livekit_api_secret
+DEEPGRAM_API_KEY=your_deepgram_api_key
+GROQ_API_KEY=your_groq_api_key
+```
 
+**Client `.env.local`** (`client/.env.local`):
+```env
+NEXT_PUBLIC_LIVEKIT_URL=wss://your-project.livekit.cloud
+```
 
-## ✨ Key Features Implemented
-- **Unified Interview Layout**: Problem description and AI interviewer sidebar are visible simultaneously.
-- **Smart Interviewer Persona**: AI auto-explains the problem, listens actively, and provides hints without giving solutions.
-- **Micro-animations**: Speaking/Listening indicators and smooth transitions.
-- **Detailed Evaluation**: LLM generated report with sections for:
-  - What was done well
-  - What could be improved
-  - Missing edge cases
-  - Next steps for preparation
-- **Voice Controls**: Mute/Unmute and auto-scrolling conversation transcript.
+### 3. Start All Services
+
+```bash
+# Terminal 1 - Backend (Port 4000)
+cd server && npm run dev
+
+# Terminal 2 - Frontend (Port 3000)
+cd client && npm run dev
+
+# Terminal 3 - Voice Agent
+cd server/agent && python agent.py start
+```
+
+### 4. Open the App
+
+Navigate to **http://localhost:3000/interview/new** and start your interview!
+
+---
+
+## 📁 Project Structure
+
+```
+socratis/
+├── client/                    # Next.js Frontend
+│   ├── app/                   # App Router pages
+│   │   ├── interview/[id]/    # Interview room & results
+│   │   └── page.tsx           # Landing page
+│   ├── components/            # React components
+│   │   ├── interview/         # Interview-specific components
+│   │   │   ├── InterviewRoom.tsx
+│   │   │   ├── CodeEditor.tsx
+│   │   │   └── VoiceComponent.tsx
+│   │   └── CustomIcons.tsx    # SVG icons & score donut
+│   └── hooks/                 # Custom React hooks
+│
+├── server/                    # Express.js Backend
+│   ├── src/
+│   │   ├── routes/
+│   │   │   └── interview.ts   # Interview API endpoints
+│   │   ├── models/
+│   │   │   └── Session.ts     # MongoDB schema
+│   │   └── services/
+│   │       └── evaluation.ts  # LLM evaluation logic
+│   └── agent/                 # Python Voice Agent
+│       ├── agent.py           # Main agent entrypoint
+│       ├── deepgram_patch.py  # TTS compatibility fix
+│       └── requirements.txt
+│
+└── README.md
+```
+
+---
+
+## 🔌 API Reference
+
+### Session Management
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/start` | POST | Create new interview session |
+| `/api/session/:id` | GET | Get session details |
+| `/api/submit` | POST | Submit code for final evaluation |
+| `/api/submit-question` | POST | Submit current question, advance to next |
+| `/api/advance-question` | POST | Agent-triggered question advancement |
+| `/api/token` | GET | Get LiveKit access token |
+
+### Request/Response Examples
+
+**Start Session:**
+```json
+POST /api/start
+Response: {
+  "sessionId": "socratis-interview",
+  "question": { "title": "Two Sum", "description": "...", "examples": [...] },
+  "totalQuestions": 1,
+  "currentQuestionIndex": 0
+}
+```
+
+**Submit for Evaluation:**
+```json
+POST /api/submit
+Body: { "sessionId": "...", "code": "...", "transcript": [...] }
+Response: {
+  "feedback": {
+    "overallScore": 7,
+    "dimensionScores": {...},
+    "strengths": [...],
+    "improvements": [...]
+  }
+}
+```
+
+---
+
+## 🧪 Agent Behavior
+
+### Interview Protocol
+
+The AI agent follows a structured interview approach:
+
+1. **Greeting**: Introduces itself and the problem
+2. **Clarification**: Ensures candidate understands requirements
+3. **Approach Discussion**: Asks about planned algorithm & complexity
+4. **Code Review**: Watches for bugs and approach changes
+5. **Completion**: Reviews solution, asks follow-up questions
+
+### Feedback Triggers
+
+| Condition | Agent Action |
+|-----------|--------------|
+| **Bug Detected** | Asks guiding question about the issue |
+| **Approach Change** | Acknowledges and asks about reasoning |
+| **60s Silent** | Offers gentle hint |
+| **Code Complete** | Asks about complexity & edge cases |
+
+### Performance Assessment
+
+Based on candidate performance, the agent decides:
+
+- **Strong Performance** → Ends interview, no second question needed
+- **Mixed Performance** → Advances to second question for fuller picture
+- **Weak Performance** → Gives another chance with different problem
+
+---
+
+## 🔑 Getting API Keys
+
+### LiveKit Cloud
+1. Go to [cloud.livekit.io](https://cloud.livekit.io/)
+2. Create a new project
+3. Copy `API Key`, `API Secret`, and `WebSocket URL`
+
+### Groq
+1. Go to [console.groq.com](https://console.groq.com/)
+2. Generate an API key
+3. Free tier includes generous limits
+
+### Deepgram
+1. Go to [console.deepgram.com](https://console.deepgram.com/)
+2. Create a new API key
+3. Free tier includes $200 credit
+
+---
+
+## 🎨 UI Features
+
+- **Brivio Light Theme**: Clean, professional design with cobalt blue accents
+- **Responsive Layout**: Resizable panels for problem description and code editor
+- **Real-time Indicators**: Speaking/listening status, question progress
+- **Score Visualization**: Radar chart for multi-dimensional performance view
+
+---
+
+## 🛠 Development
+
+### Running Tests
+```bash
+# Backend tests
+cd server && npm test
+
+# Frontend tests
+cd client && npm test
+```
+
+### Building for Production
+```bash
+# Build frontend
+cd client && npm run build
+
+# Build backend
+cd server && npm run build
+```
+
+---
+
+## 📜 License
+
+MIT License - See [LICENSE](LICENSE) for details.
+
+---
+
+## 👥 Contributors
+
+Built with ❤️ by Vasu-devs
+
+---
+
+<div align="center">
+
+**[⬆ Back to Top](#-socratis---ai-powered-technical-interview-platform)**
+
+</div>
