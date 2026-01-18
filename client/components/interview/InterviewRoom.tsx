@@ -78,6 +78,32 @@ const ActiveInterviewSession = ({
         return () => { room.off(RoomEvent.TrackSubscribed, handleTrackSubscribed); };
     }, [room]);
 
+    // CRITICAL: Send problem context to agent on connect
+    useEffect(() => {
+        const sendProblemContext = async () => {
+            if (room && localParticipant && question.title !== "Loading...") {
+                try {
+                    const problemData = {
+                        type: 'problem',
+                        title: question.title,
+                        description: question.description,
+                        examples: question.examples
+                    };
+                    const encoder = new TextEncoder();
+                    await localParticipant.publishData(encoder.encode(JSON.stringify(problemData)), { reliable: true });
+                    console.log("📝 Sent problem context to agent:", question.title);
+                } catch (e) {
+                    console.error("Failed to send problem context:", e);
+                }
+            }
+        };
+
+        // Send immediately and also after a short delay to ensure agent is ready
+        sendProblemContext();
+        const timeout = setTimeout(sendProblemContext, 2000);
+        return () => clearTimeout(timeout);
+    }, [room, localParticipant, question]);
+
     // Check if AI agent (remote) is speaking
     useEffect(() => {
         const checkSpeaking = () => {
@@ -151,7 +177,7 @@ const ActiveInterviewSession = ({
     }, [room, onEndCall]);
 
 
-    // Send Code Updates
+    // Send Code Updates - faster sync for real-time agent awareness
     useEffect(() => {
         if (!room || !localParticipant) return;
         const handler = setTimeout(async () => {
@@ -159,9 +185,9 @@ const ActiveInterviewSession = ({
                 const strData = JSON.stringify({ type: 'code', content: code });
                 const encoder = new TextEncoder();
                 await localParticipant.publishData(encoder.encode(strData), { reliable: true });
-                console.log("Sent code update");
+                console.log("📤 Sent code update to agent");
             } catch (e) { console.error(e); }
-        }, 2000);
+        }, 500); // Reduced from 2000ms for faster sync
         return () => clearTimeout(handler);
     }, [code, room, localParticipant]);
 

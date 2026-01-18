@@ -16,6 +16,21 @@ import {
     TrophyIcon
 } from '@/components/CustomIcons';
 
+interface CodeIssue {
+    line_number: number;
+    code_snippet: string;
+    issue: string;
+    suggestion: string;
+    severity: 'error' | 'warning' | 'info';
+}
+
+interface TranscriptIssue {
+    quote: string;
+    issue: string;
+    what_should_have_been_said: string;
+    category: 'concept' | 'complexity' | 'approach' | 'communication';
+}
+
 interface SessionResult {
     question: {
         title: string;
@@ -34,6 +49,8 @@ interface SessionResult {
             time_management: number;
             communication: number;
         };
+        code_issues?: CodeIssue[];
+        transcript_issues?: TranscriptIssue[];
         feedback_markdown: string;
     };
 }
@@ -385,6 +402,100 @@ export default function ResultPage({ params }: { params: { id: string } }) {
                         </div>
                     </div>
                 </div>
+
+                {/* NEW: Specific Code Issues Section */}
+                {feedback.code_issues && feedback.code_issues.length > 0 && (
+                    <div className="mb-24">
+                        <div className="flex items-center gap-4 mb-10">
+                            <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center">
+                                <span className="text-2xl">🔍</span>
+                            </div>
+                            <div>
+                                <h2 className="text-3xl font-black text-slate-950 tracking-tighter">Code Issues Detected</h2>
+                                <p className="text-slate-500 mt-1">Specific lines that need attention</p>
+                            </div>
+                        </div>
+                        <div className="space-y-4">
+                            {feedback.code_issues.map((issue, idx) => (
+                                <div key={idx} className={`rounded-2xl border p-6 ${issue.severity === 'error' ? 'bg-rose-50 border-rose-200' :
+                                        issue.severity === 'warning' ? 'bg-amber-50 border-amber-200' :
+                                            'bg-blue-50 border-blue-200'
+                                    }`}>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="flex items-center gap-3">
+                                            <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${issue.severity === 'error' ? 'bg-rose-500 text-white' :
+                                                    issue.severity === 'warning' ? 'bg-amber-500 text-white' :
+                                                        'bg-blue-500 text-white'
+                                                }`}>
+                                                {issue.severity}
+                                            </span>
+                                            <span className="text-sm font-bold text-slate-600">Line {issue.line_number}</span>
+                                        </div>
+                                    </div>
+                                    <div className="bg-slate-900 rounded-xl p-4 mb-4 font-mono text-sm text-slate-300 overflow-x-auto">
+                                        <span className="text-slate-500 mr-4">{issue.line_number}:</span>
+                                        {issue.code_snippet}
+                                    </div>
+                                    <div className="space-y-2">
+                                        <p className={`font-medium ${issue.severity === 'error' ? 'text-rose-900' :
+                                                issue.severity === 'warning' ? 'text-amber-900' :
+                                                    'text-blue-900'
+                                            }`}>
+                                            <strong>Issue:</strong> {issue.issue}
+                                        </p>
+                                        <p className="text-slate-600">
+                                            <strong>Suggestion:</strong> {issue.suggestion}
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* NEW: Specific Transcript Issues Section */}
+                {feedback.transcript_issues && feedback.transcript_issues.length > 0 && (
+                    <div className="mb-24">
+                        <div className="flex items-center gap-4 mb-10">
+                            <div className="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center">
+                                <span className="text-2xl">💬</span>
+                            </div>
+                            <div>
+                                <h2 className="text-3xl font-black text-slate-950 tracking-tighter">Communication Gaps</h2>
+                                <p className="text-slate-500 mt-1">Statements that needed correction</p>
+                            </div>
+                        </div>
+                        <div className="space-y-4">
+                            {feedback.transcript_issues.map((issue, idx) => (
+                                <div key={idx} className="rounded-2xl border border-purple-200 bg-purple-50 p-6">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${issue.category === 'concept' ? 'bg-purple-500 text-white' :
+                                                issue.category === 'complexity' ? 'bg-indigo-500 text-white' :
+                                                    issue.category === 'approach' ? 'bg-blue-500 text-white' :
+                                                        'bg-slate-500 text-white'
+                                            }`}>
+                                            {issue.category}
+                                        </span>
+                                    </div>
+                                    <div className="bg-white rounded-xl p-4 mb-4 border border-purple-100">
+                                        <p className="text-sm text-slate-500 mb-1 font-bold">What you said:</p>
+                                        <p className="text-purple-900 italic">"{issue.quote}"</p>
+                                    </div>
+                                    <div className="space-y-3">
+                                        <div className="flex items-start gap-2">
+                                            <span className="text-rose-500 mt-0.5">✗</span>
+                                            <p className="text-rose-700"><strong>Issue:</strong> {issue.issue}</p>
+                                        </div>
+                                        <div className="flex items-start gap-2">
+                                            <span className="text-emerald-500 mt-0.5">✓</span>
+                                            <p className="text-emerald-700"><strong>Should have said:</strong> {issue.what_should_have_been_said}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* Code Terminal */}
                 <div className="relative group mb-24">
