@@ -138,18 +138,19 @@ GROQ_API_KEY=your_groq_api_key
 NEXT_PUBLIC_LIVEKIT_URL=wss://your-project.livekit.cloud
 ```
 
-### 3. Start All Services
+### 3. Start Everything (One Command)
 
 ```bash
-# Terminal 1 - Backend (Port 4000)
-cd server && npm run dev
-
-# Terminal 2 - Frontend (Port 3000)
-cd client && npm run dev
-
-# Terminal 3 - Voice Agent
-cd server/agent && python agent.py start
+# From root directory - starts ALL services
+python start.py
 ```
+
+This single command starts:
+- ✅ Backend Server (Port 4000)
+- ✅ Frontend (Port 3000)
+- ✅ Voice Agent (LiveKit)
+
+Press `Ctrl+C` to stop all services.
 
 ### 4. Open the App
 
