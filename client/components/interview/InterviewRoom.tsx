@@ -16,7 +16,7 @@ import {
     useRemoteParticipants,
     useTracks,
 } from '@livekit/components-react';
-import { RoomEvent, RemoteParticipant, Track } from 'livekit-client';
+import { RoomEvent, RemoteParticipant, Track, ConnectionState } from 'livekit-client';
 import '@livekit/components-styles';
 
 interface InterviewRoomProps {
@@ -81,7 +81,7 @@ const ActiveInterviewSession = ({
     // CRITICAL: Send problem context to agent on connect
     useEffect(() => {
         const sendProblemContext = async () => {
-            if (room && localParticipant && question.title !== "Loading...") {
+            if (room && localParticipant && question.title !== "Loading..." && room.state === ConnectionState.Connected) {
                 try {
                     const problemData = {
                         type: 'problem',
@@ -95,14 +95,20 @@ const ActiveInterviewSession = ({
                 } catch (e) {
                     console.error("Failed to send problem context:", e);
                 }
+            } else {
+                console.log("⏳ Waiting for room connection to send problem context...", room?.state);
             }
         };
 
         // Send immediately and also after a short delay to ensure agent is ready
         sendProblemContext();
         const timeout = setTimeout(sendProblemContext, 2000);
-        return () => clearTimeout(timeout);
-    }, [room, localParticipant, question]);
+        const retryInterval = setInterval(sendProblemContext, 5000); // Robust retry
+        return () => {
+            clearTimeout(timeout);
+            clearInterval(retryInterval);
+        };
+    }, [room, localParticipant, question, room?.state]);
 
     // Check if AI agent (remote) is speaking
     useEffect(() => {

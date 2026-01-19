@@ -403,29 +403,32 @@ export default function ResultPage({ params }: { params: { id: string } }) {
                     </div>
                 </div>
 
-                {/* NEW: Specific Code Issues Section */}
-                {feedback.code_issues && feedback.code_issues.length > 0 && (
-                    <div className="mb-24">
-                        <div className="flex items-center gap-4 mb-10">
-                            <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center">
-                                <span className="text-2xl">🔍</span>
-                            </div>
-                            <div>
-                                <h2 className="text-3xl font-black text-slate-950 tracking-tighter">Code Issues Detected</h2>
-                                <p className="text-slate-500 mt-1">Specific lines that need attention</p>
-                            </div>
+                {/* DETAILED: Specific Code Issues Section - ALWAYS SHOWN */}
+                <div className="mb-24">
+                    <div className="flex items-center gap-4 mb-10">
+                        <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center">
+                            <span className="text-2xl">🔍</span>
                         </div>
+                        <div>
+                            <h2 className="text-3xl font-black text-slate-950 tracking-tighter">Code Issues Detected</h2>
+                            <p className="text-slate-500 mt-1">Line-by-line analysis of your implementation</p>
+                        </div>
+                        <div className="ml-auto px-4 py-2 bg-rose-50 rounded-xl border border-rose-100">
+                            <span className="text-sm font-bold text-rose-600">{feedback.code_issues?.length || 0} Issues</span>
+                        </div>
+                    </div>
+                    {feedback.code_issues && feedback.code_issues.length > 0 ? (
                         <div className="space-y-4">
                             {feedback.code_issues.map((issue, idx) => (
                                 <div key={idx} className={`rounded-2xl border p-6 ${issue.severity === 'error' ? 'bg-rose-50 border-rose-200' :
-                                        issue.severity === 'warning' ? 'bg-amber-50 border-amber-200' :
-                                            'bg-blue-50 border-blue-200'
+                                    issue.severity === 'warning' ? 'bg-amber-50 border-amber-200' :
+                                        'bg-blue-50 border-blue-200'
                                     }`}>
                                     <div className="flex items-center justify-between mb-4">
                                         <div className="flex items-center gap-3">
                                             <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${issue.severity === 'error' ? 'bg-rose-500 text-white' :
-                                                    issue.severity === 'warning' ? 'bg-amber-500 text-white' :
-                                                        'bg-blue-500 text-white'
+                                                issue.severity === 'warning' ? 'bg-amber-500 text-white' :
+                                                    'bg-blue-500 text-white'
                                                 }`}>
                                                 {issue.severity}
                                             </span>
@@ -438,8 +441,8 @@ export default function ResultPage({ params }: { params: { id: string } }) {
                                     </div>
                                     <div className="space-y-2">
                                         <p className={`font-medium ${issue.severity === 'error' ? 'text-rose-900' :
-                                                issue.severity === 'warning' ? 'text-amber-900' :
-                                                    'text-blue-900'
+                                            issue.severity === 'warning' ? 'text-amber-900' :
+                                                'text-blue-900'
                                             }`}>
                                             <strong>Issue:</strong> {issue.issue}
                                         </p>
@@ -450,29 +453,40 @@ export default function ResultPage({ params }: { params: { id: string } }) {
                                 </div>
                             ))}
                         </div>
-                    </div>
-                )}
-
-                {/* NEW: Specific Transcript Issues Section */}
-                {feedback.transcript_issues && feedback.transcript_issues.length > 0 && (
-                    <div className="mb-24">
-                        <div className="flex items-center gap-4 mb-10">
-                            <div className="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center">
-                                <span className="text-2xl">💬</span>
+                    ) : (
+                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-8 text-center">
+                            <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                                <CheckCircle2 className="w-8 h-8 text-emerald-600" />
                             </div>
-                            <div>
-                                <h2 className="text-3xl font-black text-slate-950 tracking-tighter">Communication Gaps</h2>
-                                <p className="text-slate-500 mt-1">Statements that needed correction</p>
-                            </div>
+                            <h3 className="text-xl font-bold text-emerald-900 mb-2">No Code Issues Detected</h3>
+                            <p className="text-emerald-700">Your implementation passed the automated code review without any flagged issues.</p>
                         </div>
+                    )}
+                </div>
+
+                {/* DETAILED: Communication Gaps Section - ALWAYS SHOWN */}
+                <div className="mb-24">
+                    <div className="flex items-center gap-4 mb-10">
+                        <div className="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center">
+                            <span className="text-2xl">💬</span>
+                        </div>
+                        <div>
+                            <h2 className="text-3xl font-black text-slate-950 tracking-tighter">Communication Analysis</h2>
+                            <p className="text-slate-500 mt-1">What you said vs. what you should have said</p>
+                        </div>
+                        <div className="ml-auto px-4 py-2 bg-purple-50 rounded-xl border border-purple-100">
+                            <span className="text-sm font-bold text-purple-600">{feedback.transcript_issues?.length || 0} Points</span>
+                        </div>
+                    </div>
+                    {feedback.transcript_issues && feedback.transcript_issues.length > 0 ? (
                         <div className="space-y-4">
                             {feedback.transcript_issues.map((issue, idx) => (
                                 <div key={idx} className="rounded-2xl border border-purple-200 bg-purple-50 p-6">
                                     <div className="flex items-center gap-2 mb-4">
                                         <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${issue.category === 'concept' ? 'bg-purple-500 text-white' :
-                                                issue.category === 'complexity' ? 'bg-indigo-500 text-white' :
-                                                    issue.category === 'approach' ? 'bg-blue-500 text-white' :
-                                                        'bg-slate-500 text-white'
+                                            issue.category === 'complexity' ? 'bg-indigo-500 text-white' :
+                                                issue.category === 'approach' ? 'bg-blue-500 text-white' :
+                                                    'bg-slate-500 text-white'
                                             }`}>
                                             {issue.category}
                                         </span>
@@ -494,8 +508,16 @@ export default function ResultPage({ params }: { params: { id: string } }) {
                                 </div>
                             ))}
                         </div>
-                    </div>
-                )}
+                    ) : (
+                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-8 text-center">
+                            <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                                <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+                            </div>
+                            <h3 className="text-xl font-bold text-emerald-900 mb-2">Clear Communication</h3>
+                            <p className="text-emerald-700">Your verbal explanations were accurate and well-articulated throughout the interview.</p>
+                        </div>
+                    )}
+                </div>
 
                 {/* Code Terminal */}
                 <div className="relative group mb-24">

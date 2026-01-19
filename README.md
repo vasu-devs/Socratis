@@ -25,20 +25,31 @@
 - **Intelligent Feedback**: AI provides contextual hints without giving away solutions
 - **Performance Assessment**: Agent evaluates and decides interview progression
 
-### 🧠 AI-Powered Intelligence (V2)
-- **Live Code Awareness**: Agent receives code snapshots every 2 seconds
-- **Selective Feedback**: Only speaks when detecting bugs, approach changes, or when candidate is stuck
-- **Agent-Driven Flow**: Agent decides whether to proceed to additional questions based on performance
-- **Socratic Method**: Guides candidates through hints rather than giving answers
+### 🧠 AI-Powered Intelligence (V3 - Zero-Error Refactor)
+- **Real-Time Code Awareness**: Implemented Chat Context Injection. The agent now "sees" every code change through explicit system updates, eliminating hallucinations.
+- **Dynamic Problem Agnosticism**: Agent automatically adapts to any coding problem or asks the candidate for a description if missing.
+- **Selective Feedback**: Only speaks when detecting bugs, approach changes, or when candidate is stuck.
+- **Socratic Method**: Guides candidates through hints rather than giving answers.
 
-### 📊 Evaluation & Reports
-- **Multi-dimensional Analysis**: Logic, Algorithm, Code Quality, Speed, Voice Communication
-- **Detailed Feedback**: Strengths, growth areas, and actionable next steps
-- **Visual Score Radar**: Professional result page with dimensional mapping
+### 📊 Forensic Evaluation & Reports
+- **Approach & Complexity**: Strict Big-O analysis of algorithms and space/time.
+- **Code Correctness**: Line-by-line identifies EVERY bug with formatted fixes (Line X: [Issue] -> [Fix]).
+- **Communication Analysis**: Cites exact quotes from the transcript to evaluate clarity and professional tone.
+- **Hallucination Check**: Cross-references candidate claims (e.g., "this is O(n)") against actual code implementation.
+- **Visual Score Radar**: Professional result page with dimensional mapping.
 
 ---
 
 ## 🏗 Architecture
+
+### Dual-Agent System
+
+Socratis uses a **two-agent architecture** for optimal specialization:
+
+| Agent | Technology | Purpose |
+|-------|------------|---------|
+| **Interview Agent** | Python, LiveKit, Groq (8B) | Real-time voice conversation, Socratic questioning |
+| **Report Agent** | TypeScript, Groq (70B) | Post-interview forensic analysis, detailed reports |
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -151,6 +162,14 @@ This single command starts:
 - ✅ Backend Server (Port 4000)
 - ✅ Frontend (Port 3000)
 - ✅ Voice Agent (LiveKit)
+
+### 📊 Monitoring & Debugging
+Since services run in the background via the orchestrator, real-time logs are auto-generated in the root directory:
+- `backend.log`: Express API and Database connection logs.
+- `frontend.log`: Next.js compilation and routing logs.
+- `agent.log`: LiveKit Agent events, LLM context injection, and voice pipeline details.
+
+*Note: These logs are essential for identifying port conflicts or API failures that occur without a visible console.*
 
 Press `Ctrl+C` to stop all services.
 

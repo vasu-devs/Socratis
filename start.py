@@ -34,20 +34,27 @@ def cleanup(signum=None, frame=None):
     print("✅ All services stopped.")
     sys.exit(0)
 
-def start_service(name, cmd, cwd):
+def start_service(name, cmd, cwd, log_file=None):
     """Start a service in a new process"""
     print(f"🚀 Starting {name}...")
     
-    # Use CREATE_NEW_CONSOLE on Windows to keep processes running
-    if os.name == 'nt':
-        proc = subprocess.Popen(
-            cmd,
-            cwd=cwd,
-            shell=True,
-            creationflags=subprocess.CREATE_NEW_CONSOLE
-        )
+    # Create log file for capturing output
+    if log_file:
+        log_path = ROOT_DIR / log_file
+        stdout = open(log_path, 'w')
+        stderr = subprocess.STDOUT
     else:
-        proc = subprocess.Popen(cmd, cwd=cwd, shell=True)
+        stdout = subprocess.PIPE
+        stderr = subprocess.PIPE
+    
+    # Start process without CREATE_NEW_CONSOLE to properly track status
+    proc = subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        shell=True,
+        stdout=stdout,
+        stderr=stderr
+    )
     
     processes.append(proc)
     return proc
@@ -77,7 +84,8 @@ def main():
     start_service(
         "Backend Server (Port 4000)",
         "npm run dev",
-        SERVER_DIR
+        SERVER_DIR,
+        "backend.log"
     )
     time.sleep(3)  # Give server time to start
     
@@ -85,7 +93,8 @@ def main():
     start_service(
         "Frontend (Port 3000)",
         "npm run dev",
-        CLIENT_DIR
+        CLIENT_DIR,
+        "frontend.log"
     )
     time.sleep(3)  # Give Next.js time to compile
     
@@ -93,7 +102,8 @@ def main():
     start_service(
         "Voice Agent (LiveKit)",
         "python agent.py start",
-        AGENT_DIR
+        AGENT_DIR,
+        "agent.log"
     )
     
     print()
@@ -104,19 +114,29 @@ def main():
     print("📍 Backend:   http://localhost:4000")
     print("📍 Interview: http://localhost:3000/interview/new")
     print()
+    print("📄 Logs: backend.log, frontend.log, agent.log")
+    print()
     print("Press Ctrl+C to stop all services")
     print("=" * 60)
+    
+    # Service names for error reporting
+    service_names = ["Backend", "Frontend", "Agent"]
+    failed_services = set()
     
     # Keep the script running and monitor processes
     try:
         while True:
-            time.sleep(1)
+            time.sleep(2)
             # Check if any process has died
-            for proc in processes:
-                if proc.poll() is not None:
-                    print(f"⚠️  A service has stopped unexpectedly")
+            for i, proc in enumerate(processes):
+                if proc.poll() is not None and i not in failed_services:
+                    failed_services.add(i)
+                    exit_code = proc.returncode
+                    log_file = ["backend.log", "frontend.log", "agent.log"][i]
+                    print(f"⚠️  {service_names[i]} stopped (exit code: {exit_code}) - check {log_file}")
     except KeyboardInterrupt:
         cleanup()
 
 if __name__ == "__main__":
     main()
+

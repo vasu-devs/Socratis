@@ -14,6 +14,7 @@ from livekit.agents import (
     cli,
     llm,
 )
+from livekit.agents.llm import ChatMessage, ChatRole
 import livekit.agents.voice as voice
 from livekit.plugins import deepgram, openai, silero
 
@@ -52,12 +53,23 @@ def prewarm(proc: JobProcess):
 
 def build_dynamic_instructions(problem_title: str, problem_description: str = "") -> str:
     """Build interview instructions dynamically based on current problem."""
+    
+    # Handle missing problem context - agent should ask what problem candidate is working on
+    if not problem_description or problem_description.strip() == "":
+        problem_context = f"""=== PROBLEM CONTEXT ===
+Title: {problem_title}
+NOTE: No detailed problem description has been loaded yet.
+Your FIRST task is to ask the candidate: "What coding problem are you working on today? Please describe it briefly so I can help you."
+Once they describe it, proceed with the interview based on their description."""
+    else:
+        problem_context = f"""=== CURRENT PROBLEM ===
+Title: {problem_title}
+Description: {problem_description}"""
+    
     return f"""You are Socratis, a Senior Technical Interviewer at a top-tier tech company. 
 You are conducting a live coding interview with a candidate via VOICE.
 
-=== CURRENT PROBLEM ===
-Title: {problem_title}
-{f'Description: {problem_description}' if problem_description else ''}
+{problem_context}
 
 Your Goal: Assess the candidate's problem-solving skills, code quality, and communication.
 Your Constraints: You are speaking via Text-to-Speech. You must be CONCISE.
@@ -223,88 +235,63 @@ async def entrypoint(ctx: JobContext):
     # STEP 6: Start the session (CRITICAL - must happen before say())
     logger.info("[STEP 6] Starting AgentSession with room + agent...")
     try:
+        logger.info(f"[STEP 6] - Participant state: {len(ctx.room.remote_participants)} remote participants")
         logger.info("[STEP 6] - Calling session.start(agent=logic_agent, room=ctx.room)...")
         await session.start(agent=logic_agent, room=ctx.room)
         logger.info("[STEP 6] Session started - Agent is now LIVE and listening")
         
     except Exception as e:
-        logger.error(f"[STEP 6] CRITICAL FAILURE: session.start() failed")
-        logger.error(f"[STEP 6] Error: {e}")
+        logger.error(f"[STEP 6] CRITICAL FAILURE: session.start() failed: {e}")
         import traceback
-        logger.error(f"[STEP 6] Traceback:\n{traceback.format_exc()}")
+        logger.error(traceback.format_exc())
         return
     
+    # STEP 7: Wait for participant
+    logger.info("[STEP 7] Waiting for participant audio track...")
     
-    # STEP 7: Wait for participant to be FULLY ready to receive audio
-    logger.info("[STEP 7] Waiting for participant audio track to be ready...")
-    
-    # Wait for remote participant to join
-    max_wait = 10  # seconds
+    # Wait for remote participant to join (if they haven't already appeared in ctx.room)
+    max_wait = 15
     elapsed = 0
     while len(ctx.room.remote_participants) == 0 and elapsed < max_wait:
-        await asyncio.sleep(0.5)
-        elapsed += 0.5
+        await asyncio.sleep(1.0)
+        elapsed += 1.0
+        logger.info(f"[STEP 7] Still waiting for participant... ({elapsed}s)")
     
     if len(ctx.room.remote_participants) > 0:
-        logger.info(f"[STEP 7] Participant detected! Waiting 3s for audio pipeline to fully stabilize...")
-        await asyncio.sleep(3)  # Increased from 1.5s - ensures audio receiver is FULLY ready
+        participant_id = list(ctx.room.remote_participants.keys())[0]
+        logger.info(f"[STEP 7] Participant '{participant_id}' ready. Waiting 2s for audio pipeline stabilization...")
+        await asyncio.sleep(2)
         logger.info("[STEP 7] Audio pipeline ready - proceeding with greeting")
-    else:
-        logger.warning("[STEP 7] No participant detected after 10s, proceeding anyway...")
     
-    
-    # STEP 8: Send DYNAMIC greeting (will be updated once we receive problem context)
+    # STEP 8: Send DYNAMIC greeting
     logger.info("=" * 70)
     logger.info("[STEP 8] ATTEMPTING TO SPEAK GREETING")
-    logger.info("=" * 70)
     
-    # Use dynamic problem title (will be "Coding Problem" initially, updated by data channel)
     problem_title = interview_state["current_problem"]["title"]
     greeting_text = f"Hello! I'm Socratis, your interviewer for today. Let's start with the {problem_title}. Before you dive into coding, can you walk me through your initial approach?"
     
     try:
-        logger.info(f"[STEP 8] - Greeting text: '{greeting_text}'")
-        logger.info(f"[STEP 8] - Text length: {len(greeting_text)} characters")
-        logger.info(f"[STEP 8] - Calling session.say()...")
-        logger.info(f"[STEP 8] - This will trigger Deepgram TTS API call...")
+        logger.info(f"[STEP 8] - Greeting: '{greeting_text}'")
         
-        await session.say(greeting_text, allow_interruptions=True)
+        # SPEAK - IMPORTANT: allow_interruptions=False for the initial greeting
+        await session.say(greeting_text, allow_interruptions=False)
         
-        # Publish greeting to transcript via data channel
+        # Publish to transcript
         import json
         transcript_msg = json.dumps({"type": "transcript", "role": "assistant", "text": greeting_text})
-        ctx.room.local_participant.publish_data(transcript_msg.encode('utf-8'))
-        logger.info("[STEP 8] - Published greeting to transcript")
+        await ctx.room.local_participant.publish_data(transcript_msg.encode('utf-8'))
         
-        logger.info("[STEP 8] - session.say() returned successfully!")
-        logger.info("[STEP 8] - Deepgram accepted the request")
-        logger.info("[STEP 8] - Audio synthesis completed")
-        logger.info("[STEP 8] - Audio track should be published to LiveKit room")
-        logger.info("[STEP 8] - Frontend should receive and play the audio")
-        logger.info("")
         logger.info("[STEP 8] COMPLETE - GREETING SENT!")
+        logger.info("=" * 70)
         
     except Exception as e:
-        logger.error("")
-        logger.error("=" * 70)
-        logger.error("[STEP 8] CATASTROPHIC FAILURE - GREETING FAILED")
-        logger.error("=" * 70)
-        logger.error(f"[STEP 8] Exception type: {type(e).__name__}")
-        logger.error(f"[STEP 8] Exception message: {str(e)}")
-        logger.error("")
-        logger.error("[STEP 8] POSSIBLE CAUSES:")
-        logger.error("[STEP 8] 1. Deepgram API key invalid or expired")
-        logger.error("[STEP 8] 2. Deepgram quota exceeded")
-        logger.error("[STEP 8] 3. Network connectivity issue")
-        logger.error("[STEP 8] 4. TTS model 'aura-helios-en' unavailable")
-        logger.error("")
+        logger.error(f"[STEP 8] GREETING FAILED: {e}")
         import traceback
-        logger.error(f"[STEP 8] Full traceback:\n{traceback.format_exc()}")
+        logger.error(traceback.format_exc())
         return
     
-    # STEP 9: Set up transcript publishing and code update handlers
-    logger.info("")
-    logger.info("[STEP 9] Registering event handlers for transcript and code updates...")
+    # STEP 9: Set up handlers
+    logger.info("[STEP 9] Registering event handlers...")
     
     def analyze_code_change(old_code: str, new_code: str) -> dict:
         """Analyze the difference between code snapshots to detect significant changes."""
@@ -414,52 +401,64 @@ async def entrypoint(ctx: JobContext):
                 )
                 
                 # ============================================================
-                # CRITICAL FIX: Inject code into agent's context properly
-                # Instead of using hasattr check, we inject via session
+                # CRITICAL FIX: Chat Context Injection using ChatMessage
+                # This ensures the LLM explicitly "sees" the code update
                 # ============================================================
                 
                 # Build context message with ACTUAL code
                 if should_prompt_feedback:
-                    context_msg = f"""[SYSTEM CODE_SNAPSHOT #{interview_state['update_count']}]
-The candidate's CURRENT code in the editor is:
-```
+                    context_content = f"""SYSTEM UPDATE: The candidate has modified their code (Snapshot #{interview_state['update_count']}).
+
+=== NEW CODE SNAPSHOT ===
 {code_content}
-```
+=== END CODE SNAPSHOT ===
 
 ANALYSIS: {analysis['change_type'].upper()} - {analysis['details']}
-INSTRUCTION: This is a significant change. Consider providing brief feedback if the candidate asks or if you spot a bug."""
+INSTRUCTION: This is a significant change. Review this code specifically. Consider providing brief feedback if the candidate asks or if you spot a bug."""
                     interview_state["last_feedback_time"] = current_time
                     logger.info(f"[CODE UPDATE] Significant change detected: {analysis['change_type']}")
                 else:
-                    context_msg = f"""[SYSTEM CODE_SNAPSHOT #{interview_state['update_count']}]
-The candidate's CURRENT code in the editor is:
-```
+                    context_content = f"""SYSTEM UPDATE: The candidate has modified their code (Snapshot #{interview_state['update_count']}).
+
+=== NEW CODE SNAPSHOT ===
 {code_content}
-```
-INSTRUCTION: Code update received. This is what the candidate is working on RIGHT NOW. Reference this EXACT code if asked about it."""
+=== END CODE SNAPSHOT ===
+
+INSTRUCTION: Code update received. This is what the candidate is working on RIGHT NOW. Reference this EXACT code if asked about it. NEVER hallucinate or make up code."""
                 
-                # Inject context via session's chat context
-                # Use asyncio.create_task to handle the async injection
+                # Create a proper ChatMessage for injection
+                code_snapshot_message = ChatMessage(
+                    role=ChatRole.SYSTEM,
+                    content=context_content
+                )
+                
+                # Inject context via session's chat context using asyncio
                 async def inject_context():
                     try:
-                        # Method 1: Try to access chat_ctx if available
+                        # Method 1: Try session.chat_ctx.messages (preferred)
                         if hasattr(session, 'chat_ctx') and session.chat_ctx is not None:
-                            session.chat_ctx.append(role="system", text=context_msg)
-                            logger.info("[CODE UPDATE] Context injected via session.chat_ctx")
+                            if hasattr(session.chat_ctx, 'messages'):
+                                session.chat_ctx.messages.append(code_snapshot_message)
+                                logger.info("[CODE UPDATE] ✅ Context injected via session.chat_ctx.messages")
+                            elif hasattr(session.chat_ctx, 'append'):
+                                session.chat_ctx.append(code_snapshot_message)
+                                logger.info("[CODE UPDATE] ✅ Context injected via session.chat_ctx.append")
+                            else:
+                                logger.warning("[CODE UPDATE] chat_ctx exists but no append method")
                         # Method 2: Try agent's internal context
-                        elif hasattr(logic_agent, '_chat_ctx') and logic_agent._chat_ctx is not None:
-                            logic_agent._chat_ctx.append(role="system", text=context_msg)
-                            logger.info("[CODE UPDATE] Context injected via agent._chat_ctx")
-                        # Method 3: Use llm_node if available
-                        elif hasattr(session, '_llm_node') and session._llm_node is not None:
-                            if hasattr(session._llm_node, 'chat_ctx'):
-                                session._llm_node.chat_ctx.append(role="system", text=context_msg)
-                                logger.info("[CODE UPDATE] Context injected via session._llm_node.chat_ctx")
+                        elif hasattr(logic_agent, 'chat_ctx') and logic_agent.chat_ctx is not None:
+                            if hasattr(logic_agent.chat_ctx, 'messages'):
+                                logic_agent.chat_ctx.messages.append(code_snapshot_message)
+                                logger.info("[CODE UPDATE] ✅ Context injected via agent.chat_ctx.messages")
+                            else:
+                                logger.warning("[CODE UPDATE] agent.chat_ctx exists but no messages")
+                        # Method 3: Fallback - store in state (agent reads from state)
                         else:
-                            # Fallback: Store in state for manual retrieval
-                            logger.warning("[CODE UPDATE] No direct context injection available, storing in state")
+                            logger.warning("[CODE UPDATE] No direct context injection available, code stored in interview_state")
                     except Exception as e:
                         logger.error(f"[CODE UPDATE] Context injection error: {e}")
+                        import traceback
+                        logger.error(traceback.format_exc())
                 
                 asyncio.create_task(inject_context())
                 
@@ -474,32 +473,48 @@ INSTRUCTION: Code update received. This is what the candidate is working on RIGH
     # CRITICAL: Register user speech handler to include code context in LLM calls
     # =========================================================================
     @session.on("user_input_received")
-    async def on_user_speech(user_input):
+    def on_user_speech_handler(user_input):
         """Intercept user speech and inject code context."""
-        global interview_state
-        
-        user_text = user_input.text if hasattr(user_input, 'text') else str(user_input)
-        logger.info(f"[USER SPEECH] Received: {user_text}")
-        
-        # Check if user is asking about their code
-        code_keywords = ["check", "review", "look", "code", "correct", "wrong", "bug", "error", "fix", "help"]
-        is_code_question = any(kw in user_text.lower() for kw in code_keywords)
-        
-        if is_code_question and interview_state["current_code"]:
-            # Inject current code context
-            code_context = f"""
-[IMPORTANT - CURRENT CODE IN EDITOR]
-The candidate just asked about their code. Here is their ACTUAL current code:
-```
-{interview_state['current_code']}
-```
-Respond based on THIS code, not any previous assumptions.
-"""
-            logger.info("[USER SPEECH] Code question detected, injecting code context")
+        async def on_user_speech():
+            global interview_state
             
-            # Try to inject into session context before response is generated
-            if hasattr(session, 'chat_ctx') and session.chat_ctx is not None:
-                session.chat_ctx.append(role="system", text=code_context)
+            user_text = user_input.text if hasattr(user_input, 'text') else str(user_input)
+            logger.info(f"[USER SPEECH] Received: {user_text}")
+            
+            # Check if user is asking about their code
+            code_keywords = ["check", "review", "look", "code", "correct", "wrong", "bug", "error", "fix", "help"]
+            is_code_question = any(kw in user_text.lower() for kw in code_keywords)
+            
+            if is_code_question and interview_state["current_code"]:
+                # Inject current code context using ChatMessage
+                code_context_content = f"""URGENT CODE CONTEXT: The candidate just asked about their code.
+
+=== CURRENT CODE IN EDITOR ===
+{interview_state['current_code']}
+=== END CURRENT CODE ===
+
+CRITICAL: Respond based on THIS code ONLY. Do NOT hallucinate or assume code that isn't shown above."""
+                
+                code_context_message = ChatMessage(
+                    role=ChatRole.SYSTEM,
+                    content=code_context_content
+                )
+                
+                logger.info("[USER SPEECH] Code question detected, injecting code context")
+                
+                # Try to inject into session context before response is generated
+                try:
+                    if hasattr(session, 'chat_ctx') and session.chat_ctx is not None:
+                        if hasattr(session.chat_ctx, 'messages'):
+                            session.chat_ctx.messages.append(code_context_message)
+                            logger.info("[USER SPEECH] ✅ Code context injected via messages.append")
+                        elif hasattr(session.chat_ctx, 'append'):
+                            session.chat_ctx.append(code_context_message)
+                            logger.info("[USER SPEECH] ✅ Code context injected via append")
+                except Exception as e:
+                    logger.error(f"[USER SPEECH] Failed to inject code context: {e}")
+        
+        asyncio.create_task(on_user_speech())
     
     logger.info("[STEP 9] Event handlers registered with intelligent code analysis")
     

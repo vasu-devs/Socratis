@@ -83,11 +83,12 @@ def patch_deepgram_tts():
         model = getattr(self, '_model', "aura-helios-en")
         sample_rate = getattr(self, '_sample_rate', 24000)
         
-        logger.info(f"[PATCH] Using patched synthesis for: '{text[:40]}...'")
-        
+        logger.info(f"[PATCH] Patched synthesis called for {len(text)} chars: {text[:30]}...")
         # Return a simple async generator that yields the audio
         async def _generate():
+            logger.info("[PATCH] Starting _generate generator")
             frame = await direct_deepgram_synthesize(text, api_key, model, sample_rate)
+            logger.info(f"[PATCH] Generator yielded frame: {frame.samples_per_channel} samples")
             yield tts.SynthesizedAudio(request_id="", frame=frame)
         
         # Create a simple wrapper that looks like ChunkedStream

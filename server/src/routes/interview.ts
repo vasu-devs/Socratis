@@ -91,6 +91,35 @@ function nextPermutation(nums) {
   }
 ];
 
+// ============================================================================
+// DYNAMIC QUESTION SELECTION - Randomizes question order for each session
+// ============================================================================
+
+/**
+ * Fisher-Yates shuffle algorithm for randomizing question order
+ * @param array - Array to shuffle (creates a new shuffled array, doesn't mutate)
+ * @returns Shuffled copy of the array
+ */
+function shuffleQuestions<T>(array: T[]): T[] {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+/**
+ * Select a random subset of questions from the pool
+ * @param pool - Full question pool
+ * @param count - Number of questions to select (default: 2)
+ * @returns Randomly selected and shuffled questions
+ */
+function selectRandomQuestions(pool: typeof QUESTIONS, count: number = 2): typeof QUESTIONS {
+  const shuffled = shuffleQuestions(pool);
+  return shuffled.slice(0, Math.min(count, pool.length));
+}
+
 // In-memory cache for sessions
 const sessionCache = new Map<string, any>();
 
@@ -139,19 +168,22 @@ router.post('/livekit/token', async (req: Request, res: Response) => {
 // POST /start
 router.post('/start', async (req: Request, res: Response) => {
   try {
-    // Default: Start with 1 question, agent decides if more are needed based on performance
-    // All questions are loaded but only first is shown initially
-    const allQuestions = QUESTIONS.slice(0, 2); // Prepare pool of 2 possible questions
-    const numQuestionsToShow = 1; // Start with just 1 question
+    // DYNAMIC QUESTION SELECTION: Randomly select 2 questions from the full pool
+    // This ensures each session gets a different set of questions
+    const allQuestions = selectRandomQuestions(QUESTIONS, 2);
+    const numQuestionsToShow = 1; // Start with just 1 question, agent decides if more are needed
 
     // DEBUG MODE: Fixed Session ID to match Agent Room
     const sessionId = "socratis-interview"; // uuidv4();
 
     const firstQuestion = allQuestions[0];
 
+    console.log(`[Dynamic Questions] Selected questions: ${allQuestions.map(q => q.title).join(', ')}`);
+    console.log(`[Dynamic Questions] Starting with: "${firstQuestion.title}"`);
+
     const sessionData = {
       sessionId,
-      questions: allQuestions, // Store all possible questions
+      questions: allQuestions, // Store randomly selected questions
       currentQuestionIndex: 0,
       submissions: [],
       question: {
@@ -189,6 +221,7 @@ router.post('/start', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to start session' });
   }
 });
+
 
 // POST /submit-question - Submit current question and advance to next
 router.post('/submit-question', async (req: Request, res: Response) => {
