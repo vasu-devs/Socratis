@@ -78,37 +78,59 @@ const ActiveInterviewSession = ({
         return () => { room.off(RoomEvent.TrackSubscribed, handleTrackSubscribed); };
     }, [room]);
 
-    // CRITICAL: Send problem context to agent on connect
+    // Track if problem context has been sent successfully
+    const [problemContextSent, setProblemContextSent] = useState(false);
+
+    // CRITICAL: Send problem context to agent on connect - event-driven approach
     useEffect(() => {
+        if (problemContextSent) return; // Already sent
+
         const sendProblemContext = async () => {
-            if (room && localParticipant && question.title !== "Loading..." && room.state === ConnectionState.Connected) {
-                try {
-                    const problemData = {
-                        type: 'problem',
-                        title: question.title,
-                        description: question.description,
-                        examples: question.examples
-                    };
-                    const encoder = new TextEncoder();
-                    await localParticipant.publishData(encoder.encode(JSON.stringify(problemData)), { reliable: true });
-                    console.log("📝 Sent problem context to agent:", question.title);
-                } catch (e) {
+            if (!room || !localParticipant || question.title === "Loading...") return false;
+            if (room.state !== ConnectionState.Connected) return false;
+
+            try {
+                const problemData = {
+                    type: 'problem',
+                    title: question.title,
+                    description: question.description,
+                    examples: question.examples
+                };
+                const encoder = new TextEncoder();
+                await localParticipant.publishData(encoder.encode(JSON.stringify(problemData)), { reliable: true });
+                console.log("📝 Sent problem context to agent:", question.title);
+                setProblemContextSent(true);
+                return true;
+            } catch (e) {
+                // Only log if it's not a connection state error (expected during init)
+                if (!(e instanceof Error) || !e.message.includes('PC manager')) {
                     console.error("Failed to send problem context:", e);
                 }
-            } else {
-                console.log("⏳ Waiting for room connection to send problem context...", room?.state);
+                return false;
             }
         };
 
-        // Send immediately and also after a short delay to ensure agent is ready
-        sendProblemContext();
-        const timeout = setTimeout(sendProblemContext, 2000);
-        const retryInterval = setInterval(sendProblemContext, 5000); // Robust retry
-        return () => {
-            clearTimeout(timeout);
-            clearInterval(retryInterval);
+        // Try immediately if already connected
+        if (room.state === ConnectionState.Connected) {
+            sendProblemContext();
+        }
+
+        // Listen for connection event
+        const handleConnected = () => {
+            setTimeout(sendProblemContext, 500); // Small delay for stability
         };
-    }, [room, localParticipant, question, room?.state]);
+        room.on(RoomEvent.Connected, handleConnected);
+
+        // Retry once after 3 seconds if still not sent
+        const retryTimeout = setTimeout(() => {
+            if (!problemContextSent) sendProblemContext();
+        }, 3000);
+
+        return () => {
+            room.off(RoomEvent.Connected, handleConnected);
+            clearTimeout(retryTimeout);
+        };
+    }, [room, localParticipant, question, room?.state, problemContextSent]);
 
     // Check if AI agent (remote) is speaking
     useEffect(() => {
@@ -132,10 +154,21 @@ const ActiveInterviewSession = ({
                 const decoder = new TextDecoder();
                 const data = JSON.parse(decoder.decode(payload));
                 if (data.type === 'transcript') {
-                    setTranscript(prev => [...prev, {
-                        role: data.role === 'assistant' ? 'ai' : 'user',
-                        content: data.text
-                    }]);
+                    // Filter out function calls and internal thinking from transcript
+                    let cleanedText = data.text
+                        .replace(/<function[^>]*>.*?<\/function>/gi, '')  // Remove function calls
+                        .replace(/\{["\']?reason["\']?\s*:\s*["\'][^"\']*["\']?\s*\}/gi, '')  // Remove reason objects
+                        .replace(/get_current_code\([^)]*\)/gi, '')  // Remove tool call syntax
+                        .replace(/get_problem_details\([^)]*\)/gi, '')
+                        .trim();
+
+                    // Only add to transcript if there's meaningful content left
+                    if (cleanedText && cleanedText.length > 0) {
+                        setTranscript(prev => [...prev, {
+                            role: data.role === 'assistant' ? 'ai' : 'user',
+                            content: cleanedText
+                        }]);
+                    }
 
                     // Termination check
                     if (data.role === 'user') {
@@ -154,23 +187,36 @@ const ActiveInterviewSession = ({
 
     // LiveKit Transcription Event - PRIMARY termination detection
     useEffect(() => {
+        // Helper function to clean transcript of function calls and internal syntax
+        const cleanTranscript = (text: string): string => {
+            return text
+                .replace(/<function[^>]*>.*?<\/function>/gi, '')
+                .replace(/\{["\']?reason["\']?\s*:\s*["\'][^"\']*["\']?\s*\}/gi, '')
+                .replace(/get_current_code\([^)]*\)/gi, '')
+                .replace(/get_problem_details\([^)]*\)/gi, '')
+                .replace(/I'll take a look at your code\.\s*/gi, '') // Common prefix before tool call
+                .replace(/Let me check.*?code\.\s*/gi, '')
+                .trim();
+        };
+
         const handleTranscription = (segments: any, participant?: any, publication?: any) => {
             console.log("📝 Transcription received:", segments);
 
             segments.forEach((segment: any) => {
-                const text = segment.text || '';
+                const rawText = segment.text || '';
+                const cleanedText = cleanTranscript(rawText);
                 const isFinal = segment.final;
 
-                // Add to transcript
-                if (isFinal && text) {
+                // Add to transcript only if there's meaningful content
+                if (isFinal && cleanedText && cleanedText.length > 0) {
                     const role = participant?.identity?.includes('agent') ? 'ai' : 'user';
-                    setTranscript(prev => [...prev, { role, content: text }]);
+                    setTranscript(prev => [...prev, { role, content: cleanedText }]);
 
                     // Check for termination phrases FROM USER
                     if (role === 'user') {
                         const terminationRegex = /(I('?m| am) done|End (the )?(interview|test|call)|That'?s all|Stop the interview|submit|finish|I am done|Im done)/i;
-                        if (terminationRegex.test(text)) {
-                            console.log("🔴 TERMINATION DETECTED via transcription:", text);
+                        if (terminationRegex.test(rawText)) {
+                            console.log("🔴 TERMINATION DETECTED via transcription:", rawText);
                             setTimeout(() => onEndCall(), 1000); // Small delay for UX
                         }
                     }
@@ -183,19 +229,27 @@ const ActiveInterviewSession = ({
     }, [room, onEndCall]);
 
 
-    // Send Code Updates - faster sync for real-time agent awareness
+    // Send Code Updates - with proper connection check
     useEffect(() => {
         if (!room || !localParticipant) return;
+        // Only send if connected
+        if (room.state !== ConnectionState.Connected) return;
+
         const handler = setTimeout(async () => {
             try {
                 const strData = JSON.stringify({ type: 'code', content: code });
                 const encoder = new TextEncoder();
                 await localParticipant.publishData(encoder.encode(strData), { reliable: true });
                 console.log("📤 Sent code update to agent");
-            } catch (e) { console.error(e); }
-        }, 500); // Reduced from 2000ms for faster sync
+            } catch (e) {
+                // Silently ignore connection errors - they're expected during reconnection
+                if (!(e instanceof Error) || !e.message.includes('PC manager')) {
+                    console.error("Failed to send code update:", e);
+                }
+            }
+        }, 500);
         return () => clearTimeout(handler);
-    }, [code, room, localParticipant]);
+    }, [code, room, localParticipant, room?.state]);
 
     // Mute Tingle
     const toggleMute = async () => {

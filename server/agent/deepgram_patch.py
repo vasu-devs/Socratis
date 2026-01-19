@@ -17,6 +17,7 @@ async def direct_deepgram_synthesize(text: str, api_key: str, model: str = "aura
     Direct Deepgram synthesis bypassing broken plugin
     Returns audio frame directly
     """
+    print(f"[DirectDG] Synthesizing: '{text[:50]}...'")
     logger.info(f"[DirectDG] Synthesizing: '{text[:50]}...'")
     
     session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
@@ -39,7 +40,8 @@ async def direct_deepgram_synthesize(text: str, api_key: str, model: str = "aura
             audio_bytes = await resp.read()
             samples = np.frombuffer(audio_bytes, dtype=np.int16)
             
-            logger.info(f"[DirectDG] ✓ Got {len(samples)} samples ({len(samples)/sample_rate:.2f}s)")
+            print(f"[DirectDG] Got {len(samples)} samples ({len(samples)/sample_rate:.2f}s)")
+            logger.info(f"[DirectDG] Got {len(samples)} samples ({len(samples)/sample_rate:.2f}s)")
             
             frame = rtc.AudioFrame(
                 data=samples.tobytes(),
@@ -51,6 +53,7 @@ async def direct_deepgram_synthesize(text: str, api_key: str, model: str = "aura
             return frame
             
     except Exception as e:
+        print(f"[DirectDG] Error: {e}")
         logger.error(f"[DirectDG] Error: {e}")
         raise
     finally:
@@ -64,6 +67,7 @@ def patch_deepgram_tts():
     """
     from livekit.plugins import deepgram
     
+    print(f"[PATCH] Applying Deepgram TTS monkey-patch...")
     logger.info("[PATCH] Applying Deepgram TTS monkey-patch...")
     
     # Store original synthesize
@@ -71,6 +75,7 @@ def patch_deepgram_tts():
     
     def patched_synthesize(self, text: str, **kwargs):
         """Patched synthesize that uses working HTTP approach"""
+        print(f"[PATCH] Patched synthesis called for {len(text)} chars: {text[:30]}...")
         
         # Get API key from instance or env
         api_key = getattr(self, '_api_key', None) or getattr(self, '_opts', None)
@@ -83,12 +88,9 @@ def patch_deepgram_tts():
         model = getattr(self, '_model', "aura-helios-en")
         sample_rate = getattr(self, '_sample_rate', 24000)
         
-        logger.info(f"[PATCH] Patched synthesis called for {len(text)} chars: {text[:30]}...")
         # Return a simple async generator that yields the audio
         async def _generate():
-            logger.info("[PATCH] Starting _generate generator")
             frame = await direct_deepgram_synthesize(text, api_key, model, sample_rate)
-            logger.info(f"[PATCH] Generator yielded frame: {frame.samples_per_channel} samples")
             yield tts.SynthesizedAudio(request_id="", frame=frame)
         
         # Create a simple wrapper that looks like ChunkedStream
@@ -110,5 +112,5 @@ def patch_deepgram_tts():
     # Apply patch
     deepgram.TTS.synthesize = patched_synthesize
     
-    logger.info("[PATCH] ✓ Deepgram TTS patched successfully!")
-    logger.info("[PATCH] The agent will now use working HTTP synthesis")
+    print(f"[PATCH] Deepgram TTS patched successfully!")
+    logger.info("[PATCH] Deepgram TTS patched successfully!")
