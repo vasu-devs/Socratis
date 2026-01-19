@@ -197,24 +197,26 @@ async def entrypoint(ctx: JobContext):
         await session.start(agent=logic_agent, room=ctx.room)
         logger.info("[STEP 5] Session started successfully")
 
-        # Wait for problem context to ensure correct greeting
-        logger.info("[STEP 5.5] Waiting for problem context...")
+        # 6. Send Greeting (Wait for audio channel stability AND problem context)
+        # Sleep for stability first
+        await asyncio.sleep(3.0) 
+        
+        # Then ensure we have the problem title
         try:
-            await asyncio.wait_for(problem_context_received.wait(), timeout=5.0)
+            await asyncio.wait_for(problem_context_received.wait(), timeout=2.0)
             logger.info(f"[STEP 5.5] Context received: {interview_state['problem_title']}")
         except asyncio.TimeoutError:
             logger.warning("[STEP 5.5] Timed out waiting for context, proceeding with defaults")
 
-        # 6. Send Greeting
         greeting_text = f"Hello! I'm Socratis. I see we're working on '{interview_state['problem_title']}'. Walk me through your approach before we start coding."
         logger.info(f"[STEP 6] Sending greeting: {greeting_text}")
         session.say(greeting_text, allow_interruptions=False)
         logger.info("[STEP 6] Greeting sent to session.say")
         
-        # Publish transcript for greeting
-        transcript_msg = json.dumps({"type": "transcript", "role": "assistant", "text": greeting_text})
-        if ctx.room.local_participant:
-            await ctx.room.local_participant.publish_data(transcript_msg.encode('utf-8'))
+        # NOTE: session.say() often emits a 'speech_created' event or similar which creates logic-side transcript.
+        # But if we want it to surely appear in the UI chat as "AI", we might need the data packet.
+        # However, user reported it appeared TWICE. This implies session.say + manual packet = 2.
+        # Let's try REMOVING the manual packet.
 
         # Run until participant disconnects
         while ctx.room.is_connected:
