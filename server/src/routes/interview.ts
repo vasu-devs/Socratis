@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import Session from '../models/Session';
-import { evaluateSession } from '../services/evaluator';
+// import { evaluateSession } from '../services/evaluator'; // Moved to Agent
 import { AccessToken } from 'livekit-server-sdk';
 
 const router = express.Router();
@@ -164,6 +164,30 @@ router.post('/livekit/token', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to generate token' });
   }
 });
+// POST /save-analysis - Called by Python Agent to save the final report
+router.post('/save-analysis', async (req: Request, res: Response) => {
+  const { sessionId, analysis } = req.body;
+
+  try {
+    const session = await Session.findOne({ sessionId });
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    session.feedback = analysis;
+    // Mark as completed if not already
+    session.status = 'completed';
+
+    await session.save();
+    sessionCache.set(sessionId, session.toObject());
+
+    console.log(`[Analysis] Report saved for session ${sessionId} (from Agent)`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error saving analysis:', error);
+    res.status(500).json({ error: 'Failed to save analysis' });
+  }
+});
 
 // POST /start
 router.post('/start', async (req: Request, res: Response) => {
@@ -271,21 +295,16 @@ router.post('/submit-question', async (req: Request, res: Response) => {
       session.transcript = transcript;
       session.status = 'completed';
 
-      console.log("Evaluating full session...");
-      const evaluation = await evaluateSession(
-        session.question,
-        code,
-        transcript
-      );
+      console.log("Session completed. Waiting for Agent analysis...");
+      // DO NOT EVALUATE HERE. The Python Agent will generate the report and call /save-analysis
 
-      session.feedback = evaluation;
+      session.status = 'completed';
       await session.save();
       sessionCache.set(sessionId, session.toObject());
 
       res.json({
         status: 'completed',
-        feedback: session.feedback,
-        message: 'Interview completed! All questions submitted.'
+        message: 'Interview completed! Generating report...'
       });
     }
   } catch (error) {
@@ -355,21 +374,17 @@ router.post('/submit', async (req: Request, res: Response) => {
     session.transcript = transcript;
     session.status = 'completed';
 
-    console.log("Evaluating session...");
-    const evaluation = await evaluateSession(
-      session.question,
-      code,
-      transcript
-    );
-
-    session.feedback = evaluation;
+    // DO NOT EVALUATE HERE. Agent handles it.
     await session.save();
+
+    console.log("Session submitted. Waiting for Agent analysis...");
 
     // Update cache
     sessionCache.set(sessionId, session.toObject());
 
     res.json({
-      feedback: session.feedback
+      status: 'completed',
+      message: 'Session submitted. Analysis pending.'
     });
   } catch (error) {
     console.error('Error submitting session:', error);

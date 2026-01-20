@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { Editor } from '@monaco-editor/react';
 import { ArrowLeft, CheckCircle2, Star, Target, ArrowRight, Sparkles, Box, Binary, Cpu, Network, ShieldCheck, Activity } from 'lucide-react';
 import Link from 'next/link';
@@ -62,11 +63,36 @@ function parseMarkdownSections(markdown: string) {
     let currentContent: string[] = [];
 
     lines.forEach(line => {
-        if (line.startsWith('### ')) {
+        // Match ## or ### headers
+        const match = line.match(/^(#{2,3})\s+(.+)$/);
+        if (match) {
             if (currentSection) {
                 sections[currentSection] = currentContent.join('\n').trim();
             }
-            currentSection = line.replace('### ', '').trim();
+            // Normalize: remove emojis and extra spaces for the key
+            // e.g. "✅ Strengths" -> "Strengths"
+            // But we keep the original text mapping if needed? 
+            // Actually, the UI relies on specific keys 'Strengths', 'Areas for Improvement'.
+            // So we try to map to those if we detect them.
+            let title = match[2].trim();
+
+            // Simple normalization to match keys expected by UI
+            const cleanTitle = title.replace(/[^\w\s-]/g, '').trim();
+
+            // Map known sections to standard keys
+            if (cleanTitle.includes("Strengths") || cleanTitle.includes("What Went Well")) currentSection = "Strengths";
+            else if (cleanTitle.includes("Areas for Improvement") || cleanTitle.includes("Improvement") || cleanTitle.includes("Weaknesses")) currentSection = "Areas for Improvement";
+            else if (cleanTitle.includes("Summary") || cleanTitle.includes("Executive Summary")) currentSection = "Summary";
+            else if (cleanTitle.includes("Problem-Solving") || cleanTitle.includes("Logic")) currentSection = "Problem-Solving";
+            else if (cleanTitle.includes("Communication")) currentSection = "Communication";
+            else if (cleanTitle.includes("Code Review") || cleanTitle.includes("Code Quality")) currentSection = "Code Review";
+            else currentSection = cleanTitle;
+
+            // Actually, let's use the cleanTitle if it's not a known key, to avoid emoji keys.
+            if (!["Strengths", "Areas for Improvement", "Summary", "Problem-Solving", "Communication", "Code Review"].includes(currentSection)) {
+                currentSection = cleanTitle;
+            }
+
             currentContent = [];
         } else if (currentSection) {
             currentContent.push(line);
@@ -210,15 +236,7 @@ export default function ResultPage({ params }: { params: { id: string } }) {
                             <ScoreDonut score={feedback.overall_score} size={180} />
                             <div className="h-20 w-px bg-slate-200" />
                             <div className="space-y-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100">
-                                        <TrophyIcon className="w-5 h-5 text-amber-500" />
-                                    </div>
-                                    <div>
-                                        <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Global Rank</div>
-                                        <div className="text-lg font-bold text-slate-900">Top 2.4%</div>
-                                    </div>
-                                </div>
+
                                 {feedback.correctness && (
                                     <div className="flex items-center gap-3">
                                         <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100">
@@ -297,7 +315,9 @@ export default function ResultPage({ params }: { params: { id: string } }) {
                                 {extractBullets(sections.Strengths || "").map((item, i) => (
                                     <li key={i} className="flex items-start gap-4">
                                         <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
-                                        <span className="text-emerald-950 font-medium leading-relaxed">{item}</span>
+                                        <div className="text-emerald-950 font-medium leading-relaxed prose prose-emerald prose-sm">
+                                            <ReactMarkdown components={{ p: 'span' }}>{item}</ReactMarkdown>
+                                        </div>
                                     </li>
                                 ))}
                             </ul>
@@ -313,7 +333,9 @@ export default function ResultPage({ params }: { params: { id: string } }) {
                                 {extractBullets(sections['Areas for Improvement'] || "").map((item, i) => (
                                     <li key={i} className="flex items-start gap-4">
                                         <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
-                                        <span className="text-amber-950 font-medium leading-relaxed">{item}</span>
+                                        <div className="text-amber-950 font-medium leading-relaxed prose prose-amber prose-sm">
+                                            <ReactMarkdown components={{ p: 'span' }}>{item}</ReactMarkdown>
+                                        </div>
                                     </li>
                                 ))}
                             </ul>
@@ -327,10 +349,8 @@ export default function ResultPage({ params }: { params: { id: string } }) {
                                 <span className="w-8 h-px bg-slate-200" />
                                 Executive Briefing
                             </h3>
-                            <div className="prose prose-slate max-w-none">
-                                <p className="text-2xl font-medium text-slate-900 leading-tight tracking-tight">
-                                    {sections.Summary}
-                                </p>
+                            <div className="prose prose-slate max-w-none prose-lg">
+                                <ReactMarkdown>{sections.Summary}</ReactMarkdown>
                             </div>
                         </div>
 
@@ -340,18 +360,38 @@ export default function ResultPage({ params }: { params: { id: string } }) {
                                     <Target className="w-4 h-4 text-blue-600" />
                                     Logic Path
                                 </h4>
-                                <p className="text-slate-600 leading-relaxed text-sm">
-                                    {sections['Problem-Solving'] || sections['Problem-Solving Approach'] || sections.Summary?.slice(0, 150) + '...'}
-                                </p>
+                                <div className="text-slate-600 leading-relaxed text-sm prose prose-sm prose-blue">
+                                    <ReactMarkdown>
+                                        {sections['Problem-Solving'] || sections['Problem-Solving Approach'] || sections.Summary?.slice(0, 150) + '...'}
+                                    </ReactMarkdown>
+                                </div>
                             </div>
                             <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm">
                                 <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
                                     <Network className="w-4 h-4 text-emerald-600" />
                                     Communication
                                 </h4>
-                                <p className="text-slate-600 leading-relaxed text-sm">
-                                    {sections.Communication || 'Excellent articulation of technical constraints and trade-offs observed throughout the session.'}
-                                </p>
+                                <div className="text-slate-600 leading-relaxed text-sm prose prose-sm prose-emerald">
+                                    <ReactMarkdown>
+                                        {sections.Communication || 'Excellent articulation of technical constraints and trade-offs observed throughout the session.'}
+                                    </ReactMarkdown>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Code Review Section */}
+                        <div className="bg-slate-50 rounded-3xl p-8 border border-slate-100 shadow-sm relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-6 opacity-5">
+                                <Binary className="w-24 h-24 text-slate-900" />
+                            </div>
+                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2 relative z-10">
+                                <Cpu className="w-4 h-4 text-indigo-600" />
+                                Code Architecture Review
+                            </h4>
+                            <div className="prose prose-sm prose-slate max-w-none relative z-10">
+                                <ReactMarkdown>
+                                    {sections['Code Review'] || sections['Code Quality'] || 'Detailed analysis of code structure, efficiency, and best practices.'}
+                                </ReactMarkdown>
                             </div>
                         </div>
                     </div>
@@ -359,6 +399,7 @@ export default function ResultPage({ params }: { params: { id: string } }) {
 
                 {/* Transcript - Case File Aesthetic */}
                 <div className="grid lg:grid-cols-3 gap-12 mb-24">
+                    {/* ... Transcript content ... (omitted for brevity in replacement chunk) */}
                     <div className="lg:col-span-1">
                         <h2 className="text-4xl font-black text-slate-950 tracking-tighter mb-4">Case History</h2>
                         <p className="text-slate-500 leading-relaxed mb-8">
@@ -403,124 +444,9 @@ export default function ResultPage({ params }: { params: { id: string } }) {
                     </div>
                 </div>
 
-                {/* DETAILED: Specific Code Issues Section - ALWAYS SHOWN */}
-                <div className="mb-24">
-                    <div className="flex items-center gap-4 mb-10">
-                        <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center">
-                            <span className="text-2xl">🔍</span>
-                        </div>
-                        <div>
-                            <h2 className="text-3xl font-black text-slate-950 tracking-tighter">Code Issues Detected</h2>
-                            <p className="text-slate-500 mt-1">Line-by-line analysis of your implementation</p>
-                        </div>
-                        <div className="ml-auto px-4 py-2 bg-rose-50 rounded-xl border border-rose-100">
-                            <span className="text-sm font-bold text-rose-600">{feedback.code_issues?.length || 0} Issues</span>
-                        </div>
-                    </div>
-                    {feedback.code_issues && feedback.code_issues.length > 0 ? (
-                        <div className="space-y-4">
-                            {feedback.code_issues.map((issue, idx) => (
-                                <div key={idx} className={`rounded-2xl border p-6 ${issue.severity === 'error' ? 'bg-rose-50 border-rose-200' :
-                                    issue.severity === 'warning' ? 'bg-amber-50 border-amber-200' :
-                                        'bg-blue-50 border-blue-200'
-                                    }`}>
-                                    <div className="flex items-center justify-between mb-4">
-                                        <div className="flex items-center gap-3">
-                                            <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${issue.severity === 'error' ? 'bg-rose-500 text-white' :
-                                                issue.severity === 'warning' ? 'bg-amber-500 text-white' :
-                                                    'bg-blue-500 text-white'
-                                                }`}>
-                                                {issue.severity}
-                                            </span>
-                                            <span className="text-sm font-bold text-slate-600">Line {issue.line_number}</span>
-                                        </div>
-                                    </div>
-                                    <div className="bg-slate-900 rounded-xl p-4 mb-4 font-mono text-sm text-slate-300 overflow-x-auto">
-                                        <span className="text-slate-500 mr-4">{issue.line_number}:</span>
-                                        {issue.code_snippet}
-                                    </div>
-                                    <div className="space-y-2">
-                                        <p className={`font-medium ${issue.severity === 'error' ? 'text-rose-900' :
-                                            issue.severity === 'warning' ? 'text-amber-900' :
-                                                'text-blue-900'
-                                            }`}>
-                                            <strong>Issue:</strong> {issue.issue}
-                                        </p>
-                                        <p className="text-slate-600">
-                                            <strong>Suggestion:</strong> {issue.suggestion}
-                                        </p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-8 text-center">
-                            <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                                <CheckCircle2 className="w-8 h-8 text-emerald-600" />
-                            </div>
-                            <h3 className="text-xl font-bold text-emerald-900 mb-2">No Code Issues Detected</h3>
-                            <p className="text-emerald-700">Your implementation passed the automated code review without any flagged issues.</p>
-                        </div>
-                    )}
-                </div>
-
-                {/* DETAILED: Communication Gaps Section - ALWAYS SHOWN */}
-                <div className="mb-24">
-                    <div className="flex items-center gap-4 mb-10">
-                        <div className="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center">
-                            <span className="text-2xl">💬</span>
-                        </div>
-                        <div>
-                            <h2 className="text-3xl font-black text-slate-950 tracking-tighter">Communication Analysis</h2>
-                            <p className="text-slate-500 mt-1">What you said vs. what you should have said</p>
-                        </div>
-                        <div className="ml-auto px-4 py-2 bg-purple-50 rounded-xl border border-purple-100">
-                            <span className="text-sm font-bold text-purple-600">{feedback.transcript_issues?.length || 0} Points</span>
-                        </div>
-                    </div>
-                    {feedback.transcript_issues && feedback.transcript_issues.length > 0 ? (
-                        <div className="space-y-4">
-                            {feedback.transcript_issues.map((issue, idx) => (
-                                <div key={idx} className="rounded-2xl border border-purple-200 bg-purple-50 p-6">
-                                    <div className="flex items-center gap-2 mb-4">
-                                        <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${issue.category === 'concept' ? 'bg-purple-500 text-white' :
-                                            issue.category === 'complexity' ? 'bg-indigo-500 text-white' :
-                                                issue.category === 'approach' ? 'bg-blue-500 text-white' :
-                                                    'bg-slate-500 text-white'
-                                            }`}>
-                                            {issue.category}
-                                        </span>
-                                    </div>
-                                    <div className="bg-white rounded-xl p-4 mb-4 border border-purple-100">
-                                        <p className="text-sm text-slate-500 mb-1 font-bold">What you said:</p>
-                                        <p className="text-purple-900 italic">"{issue.quote}"</p>
-                                    </div>
-                                    <div className="space-y-3">
-                                        <div className="flex items-start gap-2">
-                                            <span className="text-rose-500 mt-0.5">✗</span>
-                                            <p className="text-rose-700"><strong>Issue:</strong> {issue.issue}</p>
-                                        </div>
-                                        <div className="flex items-start gap-2">
-                                            <span className="text-emerald-500 mt-0.5">✓</span>
-                                            <p className="text-emerald-700"><strong>Should have said:</strong> {issue.what_should_have_been_said}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-8 text-center">
-                            <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                                <CheckCircle2 className="w-8 h-8 text-emerald-600" />
-                            </div>
-                            <h3 className="text-xl font-bold text-emerald-900 mb-2">Clear Communication</h3>
-                            <p className="text-emerald-700">Your verbal explanations were accurate and well-articulated throughout the interview.</p>
-                        </div>
-                    )}
-                </div>
-
                 {/* Code Terminal */}
                 <div className="relative group mb-24">
+
                     <div className="relative bg-white rounded-[40px] border border-slate-100 overflow-hidden shadow-2xl brivio-shadow">
                         <div className="px-10 py-6 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
                             <div className="flex items-center gap-4">
@@ -570,7 +496,7 @@ export default function ResultPage({ params }: { params: { id: string } }) {
                         </Link>
                     </div>
                 </div>
-            </div>
+            </div >
 
             <footer className="relative z-10 py-12 border-t border-slate-100 text-center">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.5em]">© 2026 Socratis Labs. Powered by Brivio Intelligence.</p>
@@ -591,6 +517,6 @@ export default function ResultPage({ params }: { params: { id: string } }) {
                     background: rgba(0, 0, 0, 0.1);
                 }
             `}</style>
-        </main>
+        </main >
     );
 }

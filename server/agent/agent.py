@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import json
+import aiohttp
 from dotenv import load_dotenv
 
 from livekit.agents import (
@@ -25,6 +26,10 @@ load_dotenv()
 
 logger = logging.getLogger("socratis-agent")
 logger.setLevel(logging.INFO)
+
+# ============================================================================
+# SOCRATIC INTERVIEWER PROMPT
+# ============================================================================
 
 def build_interview_instructions(problem_title="the coding task", problem_desc="the problem description", current_code="// No code yet") -> str:
     """
@@ -55,50 +60,141 @@ You are currently evaluating the candidate one-on-one.
 - **Stay in Context**: Use the [CANDIDATE CODE] above to make your questions specific. Avoid generic feedback.
 """
 
-async def generate_assessment_report(llm, problem_title, final_code, chat_messages):
+# ============================================================================
+# FORENSIC REPORT GENERATOR (SINGLE AGENT MODE)
+# ============================================================================
+
+async def generate_assessment_report(llm: LLM, session_id: str, problem_title: str, final_code: str, chat_messages):
     """
-    Generates a detailed markdown report after the interview ends.
+    Generates a FORENSIC, HYPER-CRITICAL evaluation of the session and submits it to the backend.
     """
-    logger.info("[REPORT] Generating detailed assessment report...")
+    logger.info("[REPORT] Starting forensic analysis (Single Agent)...")
     
-    # 1. Prepare transcript from messages
+    # 1. Prepare transcript
     transcript = ""
     for msg in chat_messages.items:
         role = "CANDIDATE" if msg.role == ChatRole.USER else "SOCRATIS"
         transcript += f"{role}: {msg.content}\n"
 
-    system_prompt = """You are a Lead Hiring Manager. 
-    Review the following technical interview data and generate a structured "Hiring Assessment Report".
-    
-    Structure the report exactly like this:
-    
-    ## 1. Executive Summary
-    - **Pass/Fail Recommendation**: [Strong No / No / Weak Yes / Strong Yes]
-    - **One-Line Verdict**: Why this result?
-    
-    ## 2. Code Quality Analysis
-    - **Correctness**: Did they solve the problem?
-    - **Bugs/Issues**: List specific errors.
-    - **Complexity**: Time/Space Analysis.
-    
-    ## 3. Communication
-    - Did they explain their approach?
-    - How did they handle Socratic hints?
-    """
+    # 2. Build the Forensic System Prompt
+    system_prompt = """
+# 🎯 SOCRATIS REPORT AGENT - IDENTITY
+
+You are the **Socratis Report Agent**, an elite, hyper-critical technical interview evaluator for top-tier tech companies (Google, Netflix, HFT firms).
+The interview has concluded. Your job is to provide a **Forensic, Deep-Dive Analysis**.
+The user explicitly wants to know:
+1. **Every single mistake** in their code (syntax, logic, edge cases, complexity, style, naming).
+2. **Every single flaw** in their verbal communication (rambling, imprecision, missing concepts, ignoring hints).
+3. **Specific, actionable corrections** for each issue.
+
+## YOUR CHARACTERISTICS:
+- **Ruthlessly Detailed**: Do not glaze over minor errors. Address everything. If the code works but is ugly, say it.
+- **Pinpoint Specificity**: Never say "improve error handling". Say "Line 45 catches a generic Exception which masks the specific internal error."
+- **Direct & Professional**: Use clear, high-impact language.
+- **Evidence-Based**: You MUST cite specific line numbers, variable names, and exact transcript quotes for every claim.
+- **No Filler**: Never praise "Attendance" or "Politeness". Only praise technical or communication *skills*. If there are no strengths, state "None".
+
+# 🚨 MANDATORY OUTPUT REQUIREMENTS
+
+## RULE 1: DEEP CODE AUDIT (The "Issues List")
+- **IF CODE IS EMPTY**: You MUST generate a `code_issue` at Line 1 with severity "error" and issue "Missing Implementation".
+- **IF CODE EXISTS**: List EVERY issue found. Do not limit yourself.
+- **Syntactical**: Typos, missing semicolons, wrong strict types.
+- **Logical**: Infinite loops, off-by-one errors, unnecessary computations.
+- **Best Practices**: Variable naming (e.g., 'x' vs 'userIndex'), lack of comments, magic numbers.
+
+## RULE 2: TRANSCRIPT FORENSICS (The "Verbal Audit")
+- **IF TRANSCRIPT IS SHORT/EMPTY**: You MUST generate a `transcript_issue` with severity "error" stating "Lack of Communication" or "Failure to Explain Approach".
+- You must identify SPECIFIC issues in the spoken responses.
+- **Precision**: Did they say "Hashtable" when they meant "HashSet"?
+- **Clarity**: Did they ramble?
+- **Responsiveness**: Did they ignore a hint from the interviewer?
+
+## RULE 3: Structure
+- The `code_issues` array MUST NOT be empty if there are any flaws.
+- The `transcript_issues` array MUST NOT be empty if there are any flaws.
+- Your markdown feedback MUST follow the "What Went Well" / "Areas to Improve" structure.
+- **"Areas to Improve" must be the DOMINANT section.**
+
+---
+
+# 📝 REQUIRED OUTPUT STRUCTURE (JSON ONLY)
+
+Your response MUST be valid JSON with this exact structure:
+
+```json
+{
+  "overall_score": <number 1-10>,
+  "correctness": <boolean>,
+  "dimension_scores": {
+    "problem_solving": <1-10>,
+    "algorithmic_thinking": <1-10>,
+    "code_implementation": <1-10>,
+    "testing": <1-10>,
+    "time_management": <1-10>,
+    "communication": <1-10>
+  },
+  "code_issues": [
+    {
+      "line_number": <number>,
+      "code_snippet": "<exact code or 'N/A'>",
+      "issue": "<what is wrong>",
+      "suggestion": "<how to fix>",
+      "severity": "error" | "warning" | "info"
+    }
+  ],
+  "transcript_issues": [
+    {
+      "quote": "<exact quote or 'Silence'>",
+      "issue": "<critique>",
+      "what_should_have_been_said": "<better phrasing>",
+      "category": "communication" | "technical" | "behavior"
+    }
+  ],
+  "feedback_markdown": "<full markdown report - see format below>"
+}
+```
+
+# 📄 FEEDBACK_MARKDOWN FORMAT
+
+The `feedback_markdown` string MUST use these EXACT headers (###).
+Do NOT use bolding like **Verdict** inside the header lines.
+
+### Summary
+**Verdict:** [Strong No / No / Weak Yes / Strong Yes]
+[Executive brief]
+
+### Strengths
+- **[Strength 1]:** [Specific evidence]
+[If none, state "No significant strengths observed."]
+
+### Areas for Improvement
+- **[Weakness 1]:** [Specific evidence]
+- **[Weakness 2]:** [Specific evidence]
+
+### Code Review
+[Detailed critique of the code quality]
+"""
 
     user_content = f"""
-    CONTEXT DATA:
-    -------------
-    PROBLEM TITLE: {problem_title}
-    
-    FINAL CODE STATE:
-    ```javascript
-    {final_code}
-    ```
-    
-    INTERVIEW TRANSCRIPT:
-    {transcript}
-    """
+# INTERVIEW ARTIFACTS TO ANALYZE
+
+## 📋 PROBLEM CONTEXT
+**Problem:** {problem_title}
+
+## 💻 CANDIDATE'S FINAL CODE
+```javascript
+{final_code}
+```
+
+## 🎙️ INTERVIEW TRANSCRIPT
+{transcript}
+
+---
+
+# YOUR TASK
+Generate the JSON evaluation. Do not output any text before or after the JSON.
+"""
 
     try:
         chat_ctx = ChatContext(
@@ -108,15 +204,35 @@ async def generate_assessment_report(llm, problem_title, final_code, chat_messag
             ]
         )
         
-        # Use simple non-streaming call for report
+        # Call LLM
+        logger.info("[REPORT] Querying LLM for analysis...")
         response = await llm.chat(chat_ctx=chat_ctx)
-        report_text = response.choices[0].message.content
+        content_str = response.choices[0].message.content
         
-        logger.info("\n" + "="*50 + "\nFINAL HIRING ASSESSMENT REPORT\n" + "="*50 + "\n" + report_text + "\n" + "="*50)
-        return report_text
+        # Clean potential markdown fences
+        content_str = content_str.replace("```json", "").replace("```", "").strip()
+        
+        # Parse JSON to ensure validity
+        analysis_json = json.loads(content_str)
+        logger.info(f"[REPORT] Analysis generated. Score: {analysis_json.get('overall_score')}")
+
+        # 3. Submit to Backend
+        backend_url = "http://localhost:4000/api/save-analysis"
+        payload = {
+            "sessionId": session_id,
+            "analysis": analysis_json
+        }
+        
+        async with aiohttp.ClientSession() as http_session:
+            async with http_session.post(backend_url, json=payload) as resp:
+                if resp.status == 200:
+                    logger.info("[REPORT] Successfully saved analysis to backend.")
+                else:
+                    logger.error(f"[REPORT] Backend returned error: {resp.status} - {await resp.text()}")
+
     except Exception as e:
-        logger.error(f"[REPORT] Failed to generate report: {e}")
-        return None
+        logger.error(f"[REPORT] Failed to generate/save report: {e}")
+
 
 async def entrypoint(ctx: JobContext):
     logger.info(f"[ENTRYPOINT] Starting agent for room '{ctx.room.name}'")
@@ -132,7 +248,6 @@ async def entrypoint(ctx: JobContext):
     problem_context_received = asyncio.Event()
 
     # 1. Setup Models
-    # Load VAD if missing (prewarm fallback)
     vad = ctx.proc.userdata.get("vad")
     if vad is None:
         logger.info("[ENTRYPOINT] VAD not found in userdata, loading now...")
@@ -162,7 +277,7 @@ async def entrypoint(ctx: JobContext):
         tts=deepgram_tts,
     )
 
-    # 4. Handle Data Interactions (Sync instructions with UI)
+    # 4. Handle Data Interactions
     @ctx.room.on("data_received")
     def on_data_received(data_packet):
         try:
@@ -176,7 +291,6 @@ async def entrypoint(ctx: JobContext):
                 problem_context_received.set()
             
             elif msg_type == "code":
-                # Silently update code context
                 interview_state["latest_code"] = payload.get("content", "// No code")
             
             # CRITICAL: Dynamic Injection - Update agent instructions in real-time
@@ -197,11 +311,9 @@ async def entrypoint(ctx: JobContext):
         await session.start(agent=logic_agent, room=ctx.room)
         logger.info("[STEP 5] Session started successfully")
 
-        # 6. Send Greeting (Wait for audio channel stability AND problem context)
-        # Sleep for stability first
+        # 6. Send Greeting
         await asyncio.sleep(3.0) 
         
-        # Then ensure we have the problem title
         try:
             await asyncio.wait_for(problem_context_received.wait(), timeout=2.0)
             logger.info(f"[STEP 5.5] Context received: {interview_state['problem_title']}")
@@ -211,13 +323,7 @@ async def entrypoint(ctx: JobContext):
         greeting_text = f"Hello! I'm Socratis. I see we're working on '{interview_state['problem_title']}'. Walk me through your approach before we start coding."
         logger.info(f"[STEP 6] Sending greeting: {greeting_text}")
         session.say(greeting_text, allow_interruptions=False)
-        logger.info("[STEP 6] Greeting sent to session.say")
         
-        # NOTE: session.say() often emits a 'speech_created' event or similar which creates logic-side transcript.
-        # But if we want it to surely appear in the UI chat as "AI", we might need the data packet.
-        # However, user reported it appeared TWICE. This implies session.say + manual packet = 2.
-        # Let's try REMOVING the manual packet.
-
         # Run until participant disconnects
         while ctx.room.is_connected:
             await asyncio.sleep(1)
@@ -225,14 +331,23 @@ async def entrypoint(ctx: JobContext):
     except Exception as e:
         logger.error(f"[ENTRYPOINT] Crash: {e}")
     finally:
-        # 7. Generate Post-Interview Report
+        # 7. Generate Post-Interview Report (SINGLE AGENT)
         if logic_agent.chat_ctx.messages:
+            logger.info("[ENTRYPOINT] Session ended. Triggering analysis...")
+            
+            # Assuming Room Name is the sessionId (from interview.ts logic)
+            session_id = ctx.room.name 
+            
             await generate_assessment_report(
                 groq_llm, 
+                session_id,
                 interview_state["problem_title"], 
                 interview_state["latest_code"],
                 logic_agent.chat_ctx.messages
             )
+        else:
+            logger.warning("[ENTRYPOINT] No messages found, skipping report generation.")
+            
         logger.info("[ENTRYPOINT] Cleanup complete.")
 
 async def prewarm(proc):
