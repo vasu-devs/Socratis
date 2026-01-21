@@ -42,14 +42,13 @@
 
 ## 🏗 Architecture
 
-### Dual-Agent System
+### Unified Agent System
 
-Socratis uses a **two-agent architecture** for optimal specialization:
+Socratis uses a **unified python agent** for seamless context and analysis:
 
-| Agent | Technology | Purpose |
+| Component | Technology | Purpose |
 |-------|------------|---------|
-| **Interview Agent** | Python, LiveKit, Groq (8B) | Real-time voice conversation, Socratic questioning |
-| **Report Agent** | TypeScript, Groq (70B) | Post-interview forensic analysis, detailed reports |
+| **Socratis Agent** | Python, LiveKit, Groq (70B) | Real-time voice conversation, Socratic questioning, and Post-interview forensic analysis |
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -92,10 +91,10 @@ Socratis uses a **two-agent architecture** for optimal specialization:
 |-----------|------------|---------|
 | **Frontend** | Next.js 14, React, TailwindCSS | Interview UI, Code Editor, Voice Controls |
 | **Backend** | Express.js, TypeScript, MongoDB | Session Management, Evaluation API |
-| **Voice Agent** | Python, LiveKit Agents SDK | Real-time voice conversation |
+| **Voice Agent** | Python, LiveKit Agents SDK | Real-time voice conversation & Forensic Reporting |
 | **STT** | Deepgram | Real-time speech-to-text |
 | **TTS** | Deepgram (aura-helios-en) | Natural voice synthesis |
-| **LLM** | Groq (Llama 3.1 8B Instant) | Fast inference for interviewer logic |
+| **LLM** | Groq (Llama 3.3 70B) | High-intelligence inference for interviewing and reporting |
 | **VAD** | Silero | Voice activity detection |
 
 ---
@@ -201,8 +200,7 @@ socratis/
 │   │   │   └── interview.ts   # Interview API endpoints
 │   │   ├── models/
 │   │   │   └── Session.ts     # MongoDB schema
-│   │   └── services/
-│   │       └── evaluation.ts  # LLM evaluation logic
+│   │   └── services/          # Business logic
 │   └── agent/                 # Python Voice Agent
 │       ├── agent.py           # Main agent entrypoint
 │       ├── deepgram_patch.py  # TTS compatibility fix
@@ -244,14 +242,11 @@ Response: {
 POST /api/submit
 Body: { "sessionId": "...", "code": "...", "transcript": [...] }
 Response: {
-  "feedback": {
-    "overallScore": 7,
-    "dimensionScores": {...},
-    "strengths": [...],
-    "improvements": [...]
-  }
+  "status": "completed",
+  "message": "Session submitted. Analysis pending."
 }
 ```
+*Note: The actual feedback is generated asynchronously by the agent and saved to the session. The frontend polls `/api/session/:id` to display results.*
 
 ---
 
