@@ -129,11 +129,25 @@ def main():
             time.sleep(2)
             # Check if any process has died
             for i, proc in enumerate(processes):
-                if proc.poll() is not None and i not in failed_services:
-                    failed_services.add(i)
+                if proc.poll() is not None:
                     exit_code = proc.returncode
                     log_file = ["backend.log", "frontend.log", "agent.log"][i]
-                    print(f"⚠️  {service_names[i]} stopped (exit code: {exit_code}) - check {log_file}")
+                    
+                    if i == 2: # Agent Logic
+                         print(f"⚠️  Agent stopped (exit code: {exit_code}). Restarting in 1s...")
+                         time.sleep(1)
+                         # Restart Agent
+                         new_proc = start_service(
+                            "Voice Agent (LiveKit) [Restored]",
+                            "python agent.py start",
+                            AGENT_DIR,
+                            "agent.log"
+                         )
+                         processes[i] = new_proc
+                    elif i not in failed_services:
+                         failed_services.add(i)
+                         print(f"⚠️  {service_names[i]} stopped (exit code: {exit_code}) - check {log_file}")
+
     except KeyboardInterrupt:
         cleanup()
 

@@ -284,26 +284,39 @@ async def entrypoint(ctx: JobContext):
             payload = json.loads(data_packet.data.decode('utf-8'))
             msg_type = payload.get("type")
             
+            # Log ONLY the type to avoid huge logs
+            logger.info(f"[DATA] Received packet type: {msg_type}")
+            
             if msg_type == "problem":
-                logger.info(f"[CONTEXT] Problem context received: {payload.get('title')}")
-                interview_state["problem_title"] = payload.get("title", "Updated Problem")
+                title = payload.get('title', 'Unknown')
+                logger.info(f"[CONTEXT] Problem context received: {title}")
+                interview_state["problem_title"] = title
                 interview_state["problem_desc"] = payload.get("description", "")
                 problem_context_received.set()
+                
+                # Handshake: Acknowledge receipt so frontend stops spamming
+                confirmation = json.dumps({"type": "problem_ack", "title": interview_state["problem_title"]})
+                # Ensure we use the current participant to send
+                if ctx.room.local_participant:
+                     asyncio.create_task(ctx.room.local_participant.publish_data(confirmation, reliable=True))
+                     logger.info("[DATA] Sent problem_ack to frontend")
             
             elif msg_type == "code":
                 interview_state["latest_code"] = payload.get("content", "// No code")
             
             # CRITICAL: Dynamic Injection - Update agent instructions in real-time
-            asyncio.create_task(logic_agent.update_instructions(
-                build_interview_instructions(
-                    interview_state["problem_title"],
-                    interview_state["problem_desc"],
-                    interview_state["latest_code"]
-                )
-            ))
+            # Only update if we actually have context
+            if interview_state["problem_title"] != "the coding task":
+                asyncio.create_task(logic_agent.update_instructions(
+                    build_interview_instructions(
+                        interview_state["problem_title"],
+                        interview_state["problem_desc"],
+                        interview_state["latest_code"]
+                    )
+                ))
             
         except Exception as e:
-            logger.error(f"[DATA] Error parsing packet: {e}")
+            logger.error(f"[DATA] Error processing packet: {e}")
 
     # 5. Connect and Start
     try:
@@ -312,17 +325,28 @@ async def entrypoint(ctx: JobContext):
         logger.info("[STEP 5] Session started successfully")
 
         # 6. Send Greeting
-        await asyncio.sleep(3.0) 
-        
+        # 6. Send Greeting
+        # Wait for context (with long safety timeout)
+        logger.info("[STEP 5.5] Waiting for problem context...")
         try:
-            await asyncio.wait_for(problem_context_received.wait(), timeout=2.0)
+            # Wait up to 30 seconds for context
+            await asyncio.wait_for(problem_context_received.wait(), timeout=30.0)
             logger.info(f"[STEP 5.5] Context received: {interview_state['problem_title']}")
-        except asyncio.TimeoutError:
-            logger.warning("[STEP 5.5] Timed out waiting for context, proceeding with defaults")
+            
+            # Stabilization delay: Give the frontend a moment to subscribe to the audio track
+            # This prevents the greeting from being cut off or lost during connection stabilization
+            await asyncio.sleep(1.0)
 
-        greeting_text = f"Hello! I'm Socratis. I see we're working on '{interview_state['problem_title']}'. Walk me through your approach before we start coding."
-        logger.info(f"[STEP 6] Sending greeting: {greeting_text}")
-        session.say(greeting_text, allow_interruptions=False)
+            greeting_text = f"Hello! I'm Socratis. I see we're working on '{interview_state['problem_title']}'. Walk me through your approach before we start coding."
+            logger.info(f"[STEP 6] Sending greeting: {greeting_text}")
+            await session.say(greeting_text, allow_interruptions=False)
+
+        except asyncio.TimeoutError:
+            logger.error("[STEP 5.5] CRITICAL: Timed out waiting for context!")
+            # Fallback: Just ask the user to describe it, don't hallucinate.
+            fallback_text = "Hello! I'm ready to start. Could you tell me which problem we are working on today?"
+            logger.info(f"[STEP 6] Sending FALLBACK greeting: {fallback_text}")
+            await session.say(fallback_text, allow_interruptions=False)
         
         # Run until participant disconnects
         while ctx.room.is_connected:
@@ -332,19 +356,28 @@ async def entrypoint(ctx: JobContext):
         logger.error(f"[ENTRYPOINT] Crash: {e}")
     finally:
         # 7. Generate Post-Interview Report (SINGLE AGENT)
-        if logic_agent.chat_ctx.messages:
-            logger.info("[ENTRYPOINT] Session ended. Triggering analysis...")
-            
-            # Assuming Room Name is the sessionId (from interview.ts logic)
-            session_id = ctx.room.name 
-            
-            await generate_assessment_report(
-                groq_llm, 
-                session_id,
-                interview_state["problem_title"], 
-                interview_state["latest_code"],
-                logic_agent.chat_ctx.messages
-            )
+        try:
+            # Check if agent and chat_ctx exist and yield messages
+            # Note: logic_agent.chat_ctx might be read-only or structured differently in some versions
+            if logic_agent and hasattr(logic_agent, 'chat_ctx'):
+                 # Inspect keys or attributes safely
+                 messages = getattr(logic_agent.chat_ctx, 'messages', None)
+                 
+                 if messages:
+                    logger.info("[ENTRYPOINT] Session ended. Triggering analysis...")
+                    
+                    # Assuming Room Name is the sessionId (from interview.ts logic)
+                    session_id = ctx.room.name 
+                    
+                    await generate_assessment_report(
+                        groq_llm, 
+                        session_id,
+                        interview_state["problem_title"], 
+                        interview_state["latest_code"],
+                        messages
+                    )
+        except Exception as report_err:
+            logger.error(f"[ENTRYPOINT] Report generation failed (non-fatal): {report_err}")
         else:
             logger.warning("[ENTRYPOINT] No messages found, skipping report generation.")
             

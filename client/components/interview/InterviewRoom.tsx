@@ -78,16 +78,26 @@ const ActiveInterviewSession = ({
         return () => { room.off(RoomEvent.TrackSubscribed, handleTrackSubscribed); };
     }, [room]);
 
-    // Track if problem context has been sent successfully
+    // Track if problem context has been sent successfully AND acknowledged
     const [problemContextSent, setProblemContextSent] = useState(false);
+    const [problemAckReceived, setProblemAckReceived] = useState(false);
 
-    // CRITICAL: Send problem context to agent on connect - event-driven approach
+    // Reset ack state when sessionId changes to support "second attempt"
     useEffect(() => {
-        if (problemContextSent) return; // Already sent
+        console.log("🔄 Session ID changed, resetting context ack state");
+        setProblemAckReceived(false);
+        setProblemContextSent(false);
+    }, [sessionId]);
+
+    // CRITICAL: Send problem context to agent on connect - RETRY UNTIL ACKNOWLEDGED
+    // CRITICAL: Send problem context to agent on connect - RETRY UNTIL ACKNOWLEDGED
+    useEffect(() => {
+        if (problemAckReceived) return; // Stop if acknowledged
 
         const sendProblemContext = async () => {
-            if (!room || !localParticipant || question.title === "Loading...") return false;
-            if (room.state !== ConnectionState.Connected) return false;
+            if (!room || !localParticipant || question.title === "Loading...") return;
+            // Only send if connected or reconnecting
+            if (room.state !== ConnectionState.Connected && room.state !== ConnectionState.Reconnecting) return;
 
             try {
                 const problemData = {
@@ -97,40 +107,34 @@ const ActiveInterviewSession = ({
                     examples: question.examples
                 };
                 const encoder = new TextEncoder();
+                // Send reliable message
                 await localParticipant.publishData(encoder.encode(JSON.stringify(problemData)), { reliable: true });
-                console.log("📝 Sent problem context to agent:", question.title);
-                setProblemContextSent(true);
-                return true;
+                console.log(`📝 [Retry] Sent problem context: "${question.title}" (Waiting for Ack)`);
             } catch (e) {
-                // Only log if it's not a connection state error (expected during init)
-                if (!(e instanceof Error) || !e.message.includes('PC manager')) {
-                    console.error("Failed to send problem context:", e);
-                }
-                return false;
+                // Ignore temporary connection issues
             }
         };
 
-        // Try immediately if already connected
+        // Send immediately if connected
         if (room.state === ConnectionState.Connected) {
             sendProblemContext();
         }
 
-        // Listen for connection event
-        const handleConnected = () => {
-            setTimeout(sendProblemContext, 500); // Small delay for stability
+        // Trigger immediately on Reconnected event to catch the agent ASAP
+        const handleReconnected = () => {
+            console.log("🔄 Reconnected! Sending context immediately...");
+            sendProblemContext();
         };
-        room.on(RoomEvent.Connected, handleConnected);
+        room.on(RoomEvent.Reconnected, handleReconnected);
 
-        // Retry once after 3 seconds if still not sent
-        const retryTimeout = setTimeout(() => {
-            if (!problemContextSent) sendProblemContext();
-        }, 3000);
+        // Retry FREQUENTLY (500ms) to minimize latency until acknowledged
+        const intervalId = setInterval(sendProblemContext, 500);
 
         return () => {
-            room.off(RoomEvent.Connected, handleConnected);
-            clearTimeout(retryTimeout);
+            clearInterval(intervalId);
+            room.off(RoomEvent.Reconnected, handleReconnected);
         };
-    }, [room, localParticipant, question, room?.state, problemContextSent]);
+    }, [room, localParticipant, question, room?.state, problemAckReceived]);
 
     // Check if AI agent (remote) is speaking
     useEffect(() => {
@@ -178,6 +182,9 @@ const ActiveInterviewSession = ({
                             onEndCall();
                         }
                     }
+                } else if (data.type === 'problem_ack') {
+                    console.log("✅ Agent acknowledged problem context:", data.title);
+                    setProblemAckReceived(true);
                 }
             } catch (e) { console.error(e); }
         };
