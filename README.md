@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![Visualize in MapMyRepo](https://mapmyrepo.vasudev.live/badge.svg)](https://mapmyrepo.vasudev.live/?user=VASU-DEVS&repo=Socratis)
+[![Visualize in MapMyRepo](https://mapmyrepo.siddhvasudev.com/badge.svg)](https://mapmyrepo.siddhvasudev.com/?user=VASU-DEVS&repo=Socratis)
 
 ![Socratis](https://img.shields.io/badge/Socratis-AI%20Interviewer-blue?style=for-the-badge)
 ![LiveKit](https://img.shields.io/badge/LiveKit-Real--time%20Voice-green?style=for-the-badge)
