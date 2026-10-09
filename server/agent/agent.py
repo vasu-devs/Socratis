@@ -11,16 +11,13 @@ from livekit.agents import (
     JobContext,
     AgentSession,
     ChatContext,
-    ChatMessage,
-    ChatRole,
 )
 from livekit.agents.llm import LLM
 from livekit.plugins import deepgram, openai, silero
 import livekit.agents.voice as voice
 
-# --- Deepgram/TTS fix ---
-from deepgram_patch import patch_deepgram_tts
-patch_deepgram_tts()
+
+
 
 load_dotenv()
 
@@ -31,50 +28,65 @@ logger.setLevel(logging.INFO)
 # SOCRATIC INTERVIEWER PROMPT
 # ============================================================================
 
-def build_interview_instructions(problem_title="the coding task", problem_desc="the problem description", current_code="// No code yet") -> str:
+def build_interview_instructions(problem_title="the coding task", problem_desc="the problem description", current_code="// No code yet", examples=None) -> str:
     """
     Constructs the Socratic instructions with real-time context injected.
     """
+    examples_text = ""
+    if examples:
+        examples_text = "\n   - **Examples:**\n"
+        for ex in examples:
+            examples_text += f"     - {ex}\n"
+
     return f"""# ROLE: SOCRATIS - Senior Technical Interviewer
 
-You are Socratis, a calm, professional Senior Software Engineer.
-You are currently evaluating the candidate one-on-one.
+You are Socratis, a calm, professional Senior Software Engineer conducting a live coding interview.
 
 ## LIVE CONTEXT (THE ONLY SOURCE OF TRUTH)
 1. **[CURRENT PROBLEM]**: {problem_title}
-   - Description: {problem_desc}
-   - **IMPORTANT**: If they ask "What is the problem?", briefly remind them of the title. BUT DO NOT ask them "What is the problem?". YOU SEE IT.
+   - Description: {problem_desc}{examples_text}
+   - **IMPORTANT**: You already know the problem. Never ask the candidate what it is.
 2. **[CANDIDATE CODE]**: 
 ```javascript
 {current_code}
 ```
 
-## INTERVIEW STAGES
-1. **Approach Review**: BEFORE they code, ask them to explain their plan.
-2. **Silent Observation**: While they type, STAY SILENT. If they pause for >30s, comment on a SPECIFIC line of their code.
-3. **Socratic Inquiry**: If they make a mistake, do not give the answer. Instead, ask: "I'm looking at line X... how would that handle [edge case]?"
+## ABSOLUTE RULES (NEVER BREAK THESE)
+- **MAXIMUM 30 WORDS per response.** This is a hard limit. Count your words.
+- **1-2 sentences ONLY.** Never exceed this.
+- **You are SPEAKING, not writing.** Be conversational and natural.
+- **No bullet points, no lists, no markdown.** You are talking out loud.
+- **No Direct Answers**: Never write or dictate code for them.
 
-## GUARDRAILS
-- **No Direct Answers**: Never write code for them.
-- **Concise**: Keep responses under 2 sentences.
-- **Stay in Context**: Use the [CANDIDATE CODE] above to make your questions specific. Avoid generic feedback.
+## INTERVIEW FLOW
+1. **Approach First**: Before they code, ask them to explain their plan in ONE short question.
+2. **Stay Silent While They Type**: Only speak if they pause for 30+ seconds.
+3. **Socratic Questions**: If they struggle, ask about a SPECIFIC line. Example: "How would line 5 handle an empty array?"
+
+## WHAT NEVER TO DO
+- Never give long explanations
+- Never list multiple points
+- Never repeat the problem description
+- Never say "Let me explain" or "Here's what I think"
 """
 
 # ============================================================================
 # FORENSIC REPORT GENERATOR (SINGLE AGENT MODE)
 # ============================================================================
 
-async def generate_assessment_report(llm: LLM, session_id: str, problem_title: str, final_code: str, chat_messages):
+async def generate_assessment_report(llm: LLM, session_id: str, problem_title: str, problem_desc: str, final_code: str, chat_messages):
     """
     Generates a FORENSIC, HYPER-CRITICAL evaluation of the session and submits it to the backend.
     """
     logger.info("[REPORT] Starting forensic analysis (Single Agent)...")
     
-    # 1. Prepare transcript
+    # 1. Prepare transcript from chat items
     transcript = ""
-    for msg in chat_messages.items:
-        role = "CANDIDATE" if msg.role == ChatRole.USER else "SOCRATIS"
-        transcript += f"{role}: {msg.content}\n"
+    for msg in chat_messages:
+        role = "CANDIDATE" if msg.role == "user" else "SOCRATIS"
+        text = msg.text_content or ""
+        if text.strip():
+            transcript += f"{role}: {text}\n"
 
     # 2. Build the Forensic System Prompt
     system_prompt = """
@@ -181,6 +193,7 @@ Do NOT use bolding like **Verdict** inside the header lines.
 
 ## 📋 PROBLEM CONTEXT
 **Problem:** {problem_title}
+**Description:** {problem_desc}
 
 ## 💻 CANDIDATE'S FINAL CODE
 ```javascript
@@ -197,17 +210,18 @@ Generate the JSON evaluation. Do not output any text before or after the JSON.
 """
 
     try:
-        chat_ctx = ChatContext(
-            messages=[
-                ChatMessage(role=ChatRole.SYSTEM, content=system_prompt),
-                ChatMessage(role=ChatRole.USER, content=user_content),
-            ]
-        )
+        chat_ctx = ChatContext()
+        chat_ctx.add_message(role="system", content=system_prompt)
+        chat_ctx.add_message(role="user", content=user_content)
         
-        # Call LLM
+        # Call LLM — returns an LLMStream, must iterate to collect response
         logger.info("[REPORT] Querying LLM for analysis...")
-        response = await llm.chat(chat_ctx=chat_ctx)
-        content_str = response.choices[0].message.content
+        llm_stream = llm.chat(chat_ctx=chat_ctx)
+        content_parts = []
+        async for part in llm_stream.to_str_iterable():
+            content_parts.append(part)
+        await llm_stream.aclose()
+        content_str = "".join(content_parts)
         
         # Clean potential markdown fences
         content_str = content_str.replace("```json", "").replace("```", "").strip()
@@ -241,13 +255,30 @@ async def entrypoint(ctx: JobContext):
     interview_state = {
         "problem_title": "the coding task",
         "problem_desc": "the problem description",
+        "examples": [],
         "latest_code": "// Preparing your environment...",
     }
-    
-    # Event to signal when problem context is ready
-    problem_context_received = asyncio.Event()
 
-    # 1. Setup Models
+    # 1. Fetch question context directly from backend API (room name = session ID)
+    session_id = ctx.room.name
+    logger.info(f"[CONTEXT] Fetching session context from backend for '{session_id}'...")
+    try:
+        async with aiohttp.ClientSession() as http_session:
+            async with http_session.get(f"http://localhost:4000/api/session/{session_id}") as resp:
+                if resp.status == 200:
+                    session_data = await resp.json()
+                    q = session_data.get("question", {})
+                    interview_state["problem_title"] = q.get("title", "the coding task")
+                    interview_state["problem_desc"] = q.get("description", "the problem description")
+                    interview_state["examples"] = q.get("examples", [])
+                    interview_state["latest_code"] = q.get("starterCode", "// No code yet")
+                    logger.info(f"[CONTEXT] Loaded context from API: '{interview_state['problem_title']}'")
+                else:
+                    logger.error(f"[CONTEXT] Backend returned {resp.status}, using fallback context")
+    except Exception as e:
+        logger.error(f"[CONTEXT] Failed to fetch from API: {e}, using fallback context")
+
+    # 2. Setup Models
     vad = ctx.proc.userdata.get("vad")
     if vad is None:
         logger.info("[ENTRYPOINT] VAD not found in userdata, loading now...")
@@ -261,15 +292,25 @@ async def entrypoint(ctx: JobContext):
     )
     
     deepgram_stt = deepgram.STT(model="nova-2-general")
-    deepgram_tts = deepgram.TTS(model="aura-helios-en")
+    
+    # CRITICAL: The native Deepgram plugin's _ensure_session() calls
+    # http_context.http_session() which fails outside the worker's HTTP context.
+    # We must provide our own aiohttp session to make TTS work.
+    http_session = aiohttp.ClientSession()
+    deepgram_tts = deepgram.TTS(model="aura-helios-en", http_session=http_session)
 
-    # 2. Define the Agent
+    # 3. Define the Agent WITH CONTEXT ALREADY LOADED
     logic_agent = voice.Agent(
-        instructions=build_interview_instructions(),
+        instructions=build_interview_instructions(
+            interview_state["problem_title"],
+            interview_state["problem_desc"],
+            interview_state["latest_code"],
+            interview_state["examples"]
+        ),
         chat_ctx=ChatContext()
     )
 
-    # 3. Setup Session
+    # 4. Setup Session
     session = AgentSession(
         vad=vad,
         stt=deepgram_stt,
@@ -277,109 +318,91 @@ async def entrypoint(ctx: JobContext):
         tts=deepgram_tts,
     )
 
-    # 4. Handle Data Interactions
+    # 5. Handle Data Interactions (code updates only — context already loaded from API)
     @ctx.room.on("data_received")
     def on_data_received(data_packet):
         try:
             payload = json.loads(data_packet.data.decode('utf-8'))
             msg_type = payload.get("type")
             
-            # Log ONLY the type to avoid huge logs
-            logger.info(f"[DATA] Received packet type: {msg_type}")
-            
-            if msg_type == "problem":
-                title = payload.get('title', 'Unknown')
-                logger.info(f"[CONTEXT] Problem context received: {title}")
-                interview_state["problem_title"] = title
-                interview_state["problem_desc"] = payload.get("description", "")
-                problem_context_received.set()
-                
-                # Handshake: Acknowledge receipt so frontend stops spamming
-                confirmation = json.dumps({"type": "problem_ack", "title": interview_state["problem_title"]})
-                # Ensure we use the current participant to send
-                if ctx.room.local_participant:
-                     asyncio.create_task(ctx.room.local_participant.publish_data(confirmation, reliable=True))
-                     logger.info("[DATA] Sent problem_ack to frontend")
-            
-            elif msg_type == "code":
+            if msg_type == "code":
                 interview_state["latest_code"] = payload.get("content", "// No code")
-            
-            # CRITICAL: Dynamic Injection - Update agent instructions in real-time
-            # Only update if we actually have context
-            if interview_state["problem_title"] != "the coding task":
+                # Update agent instructions with latest code
                 asyncio.create_task(logic_agent.update_instructions(
                     build_interview_instructions(
                         interview_state["problem_title"],
                         interview_state["problem_desc"],
-                        interview_state["latest_code"]
+                        interview_state["latest_code"],
+                        interview_state["examples"]
                     )
                 ))
+            elif msg_type == "problem":
+                # Handle question advancement (Q2) if frontend sends new context
+                title = payload.get('title', '')
+                if title and title != interview_state["problem_title"]:
+                    logger.info(f"[CONTEXT] Question advanced to: {title}")
+                    interview_state["problem_title"] = title
+                    interview_state["problem_desc"] = payload.get("description", "")
+                    interview_state["examples"] = payload.get("examples", [])
+                    asyncio.create_task(logic_agent.update_instructions(
+                        build_interview_instructions(
+                            interview_state["problem_title"],
+                            interview_state["problem_desc"],
+                            interview_state["latest_code"],
+                            interview_state["examples"]
+                        )
+                    ))
             
         except Exception as e:
             logger.error(f"[DATA] Error processing packet: {e}")
 
-    # 5. Connect and Start
+    # 6. Connect and Start
     try:
-        logger.info("[STEP 5] Calling session.start...")
+        logger.info("[STEP 6] Calling session.start...")
         await session.start(agent=logic_agent, room=ctx.room)
-        logger.info("[STEP 5] Session started successfully")
+        logger.info("[STEP 6] Session started successfully")
 
-        # 6. Send Greeting
-        # 6. Send Greeting
-        # Wait for context (with long safety timeout)
-        logger.info("[STEP 5.5] Waiting for problem context...")
-        try:
-            # Wait up to 30 seconds for context
-            await asyncio.wait_for(problem_context_received.wait(), timeout=30.0)
-            logger.info(f"[STEP 5.5] Context received: {interview_state['problem_title']}")
-            
-            # Stabilization delay: Give the frontend a moment to subscribe to the audio track
-            # This prevents the greeting from being cut off or lost during connection stabilization
-            await asyncio.sleep(1.0)
-
-            greeting_text = f"Hello! I'm Socratis. I see we're working on '{interview_state['problem_title']}'. Walk me through your approach before we start coding."
-            logger.info(f"[STEP 6] Sending greeting: {greeting_text}")
-            await session.say(greeting_text, allow_interruptions=False)
-
-        except asyncio.TimeoutError:
-            logger.error("[STEP 5.5] CRITICAL: Timed out waiting for context!")
-            # Fallback: Just ask the user to describe it, don't hallucinate.
-            fallback_text = "Hello! I'm ready to start. Could you tell me which problem we are working on today?"
-            logger.info(f"[STEP 6] Sending FALLBACK greeting: {fallback_text}")
-            await session.say(fallback_text, allow_interruptions=False)
+        # Use generate_reply instead of session.say() — it goes through the
+        # normal agent pipeline with built-in connection retry handling.
+        # session.say() blocks and loses audio during WebRTC instability.
+        if interview_state["problem_title"] != "the coding task":
+            greeting_instruction = f"Greet the candidate briefly. Mention you see the problem '{interview_state['problem_title']}' and ask them to walk you through their approach. Keep it under 20 words."
+        else:
+            greeting_instruction = "Greet the candidate and ask which problem they're working on. Keep it under 15 words."
+        
+        logger.info(f"[STEP 7] Triggering greeting via generate_reply")
+        session.generate_reply(instructions=greeting_instruction)
         
         # Run until participant disconnects
-        while ctx.room.is_connected:
+        while ctx.room.isconnected():
             await asyncio.sleep(1)
 
     except Exception as e:
         logger.error(f"[ENTRYPOINT] Crash: {e}")
     finally:
-        # 7. Generate Post-Interview Report (SINGLE AGENT)
+        # 8. Generate Post-Interview Report
         try:
-            # Check if agent and chat_ctx exist and yield messages
-            # Note: logic_agent.chat_ctx might be read-only or structured differently in some versions
-            if logic_agent and hasattr(logic_agent, 'chat_ctx'):
-                 # Inspect keys or attributes safely
-                 messages = getattr(logic_agent.chat_ctx, 'messages', None)
-                 
-                 if messages:
-                    logger.info("[ENTRYPOINT] Session ended. Triggering analysis...")
-                    
-                    # Assuming Room Name is the sessionId (from interview.ts logic)
-                    session_id = ctx.room.name 
-                    
-                    await generate_assessment_report(
-                        groq_llm, 
-                        session_id,
-                        interview_state["problem_title"], 
-                        interview_state["latest_code"],
-                        messages
-                    )
+            chat_items = session.chat_ctx.items if session else []
+            if chat_items and len(chat_items) > 1:
+                logger.info(f"[ENTRYPOINT] Session ended. {len(chat_items)} messages. Triggering analysis...")
+                await generate_assessment_report(
+                    groq_llm, 
+                    session_id,
+                    interview_state["problem_title"],
+                    interview_state["problem_desc"],
+                    interview_state["latest_code"],
+                    chat_items
+                )
+            else:
+                logger.warning("[ENTRYPOINT] No chat messages found, skipping report generation.")
         except Exception as report_err:
             logger.error(f"[ENTRYPOINT] Report generation failed (non-fatal): {report_err}")
-        else:
-            logger.warning("[ENTRYPOINT] No messages found, skipping report generation.")
+        
+        # Close the aiohttp session we created for TTS
+        try:
+            await http_session.close()
+        except Exception:
+            pass
             
         logger.info("[ENTRYPOINT] Cleanup complete.")
 

@@ -6,7 +6,7 @@ import { AccessToken } from 'livekit-server-sdk';
 
 const router = express.Router();
 
-import redis from '../lib/redis';
+
 
 // Hardcoded questions for variety
 const QUESTIONS = [
@@ -197,8 +197,7 @@ router.post('/start', async (req: Request, res: Response) => {
     const allQuestions = selectRandomQuestions(QUESTIONS, 2);
     const numQuestionsToShow = 1; // Start with just 1 question, agent decides if more are needed
 
-    // DEBUG MODE: Fixed Session ID to match Agent Room
-    const sessionId = "socratis-interview"; // uuidv4();
+    const sessionId = uuidv4();
 
     const firstQuestion = allQuestions[0];
 

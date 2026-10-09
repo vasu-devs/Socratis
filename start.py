@@ -34,7 +34,7 @@ def cleanup(signum=None, frame=None):
     print("✅ All services stopped.")
     sys.exit(0)
 
-def start_service(name, cmd, cwd, log_file=None):
+def start_service(name, cmd, cwd, log_file=None, append=True):
     """Start a service in a new process"""
     print(f"🚀 Starting {name}...")
     
@@ -56,7 +56,8 @@ def start_service(name, cmd, cwd, log_file=None):
         stderr=stderr
     )
     
-    processes.append(proc)
+    if append:
+        processes.append(proc)
     return proc
 
 def main():
@@ -141,7 +142,8 @@ def main():
                             "Voice Agent (LiveKit) [Restored]",
                             "python agent.py start",
                             AGENT_DIR,
-                            "agent.log"
+                            "agent.log",
+                            append=False
                          )
                          processes[i] = new_proc
                     elif i not in failed_services:

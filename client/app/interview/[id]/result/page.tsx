@@ -117,17 +117,35 @@ export default function ResultPage({ params }: { params: { id: string } }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        let pollInterval: NodeJS.Timeout | null = null;
+
         const fetchResult = async () => {
             try {
                 const res = await fetch(`http://localhost:4000/api/session/${params.id}`);
-                if (res.ok) setSession(await res.json());
+                if (res.ok) {
+                    const data = await res.json();
+                    setSession(data);
+
+                    // Stop polling once feedback is available
+                    if (data.feedback) {
+                        if (pollInterval) clearInterval(pollInterval);
+                        pollInterval = null;
+                    }
+                }
             } catch (error) {
                 console.error(error);
             } finally {
                 setLoading(false);
             }
         };
+
+        // Fetch immediately, then poll every 3s until feedback arrives
         fetchResult();
+        pollInterval = setInterval(fetchResult, 3000);
+
+        return () => {
+            if (pollInterval) clearInterval(pollInterval);
+        };
     }, [params.id]);
 
     if (loading) {
